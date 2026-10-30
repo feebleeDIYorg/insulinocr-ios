@@ -1,6 +1,6 @@
 # Therapy model validation
 
-The current portable suite contains 54 tests. `TherapyReferenceMatrixTests`
+The current portable suite contains 57 tests. `TherapyReferenceMatrixTests`
 adds an independent insulin oracle and broadens the numerical parameter matrix.
 This is numerical model evidence, not clinical validation or OCR acceptance.
 

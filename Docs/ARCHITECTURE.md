@@ -82,6 +82,12 @@ layout validation
   -> immutable AnalysisRun
 ```
 
+Full-image text may corroborate a pill only when its complete bounding box
+belongs to exactly one complete event stem and covers that stem horizontally.
+Merged multi-pill text, shared evidence and conflicting amounts remain unknown;
+the confidence threshold is unchanged. All contributing observation IDs remain
+in provenance.
+
 Known landscape layouts from 1 to 48 hours are supported. Unknown layouts are
 rejected as `unsupportedLayout`. A fully visible event stem with an uncertain
 amount becomes `amountUnknown` and blocks the relevant IOB or COB component.
