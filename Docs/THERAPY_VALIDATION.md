@@ -1,6 +1,7 @@
 # Therapy model validation
 
-The current core suite contains 63 tests, including native Vision failure-path checks. `TherapyReferenceMatrixTests`
+The current core suite contains 62 tests. Native Vision failure-path checks run in
+the iOS app test target on the shipping platform. `TherapyReferenceMatrixTests`
 adds an independent insulin oracle and broadens the numerical parameter matrix.
 This is numerical model evidence, not clinical validation or OCR acceptance.
 
