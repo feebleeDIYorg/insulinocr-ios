@@ -45,8 +45,11 @@ Only the final approved signing step receives credentials. Private identifier
 values and derived authentication are masked before use. Detailed signing
 output is stored in a temporary directory and removed rather than published.
 No signed packages, signing logs or profiles are uploaded as Actions artifacts.
-A generic failure requires private investigation; do not paste private logs into
-public issues. Do not enable shell tracing or add environment-dump steps.
+Public errors contain only allowlisted stage/code tokens, such as
+`stage=match code=match_decryption_failed`. Underlying messages, repository URLs,
+identifiers and credentials never become diagnostic fields. An unclassified
+Match failure remains `match_failed` and requires private investigation; do not
+paste private logs into public issues. Do not enable shell tracing or add environment-dump steps.
 
 ## Authorized local delivery
 

@@ -47,6 +47,7 @@ jobs:
           bundle exec ruby -c fastlane/Matchfile
           bundle exec ruby Scripts/test_fastlane_credentials.rb
           bundle exec ruby Scripts/test_build_configuration.rb
+          bundle exec ruby Scripts/test_delivery_status.rb
           bundle exec fastlane lanes
           git diff --exit-code -- Gemfile.lock
 
