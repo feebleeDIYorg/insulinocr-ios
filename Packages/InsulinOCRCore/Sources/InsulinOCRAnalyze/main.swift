@@ -15,7 +15,7 @@ struct AnalyzeCommand {
                 let output = URL(fileURLWithPath: CommandLine.arguments[2])
                 let encoder = JSONEncoder()
                 encoder.outputFormatting = [.prettyPrinted, .sortedKeys]
-                if let payload = try? encoder.encode(Failure(error: String(describing: error))) {
+                if let payload = try? encoder.encode(Failure(error: error.localizedDescription)) {
                     try? payload.write(to: output, options: .atomic)
                 }
             }
@@ -36,16 +36,17 @@ struct AnalyzeCommand {
         let data = try Data(contentsOf: input)
         let engine = NativeAnalysisEngine()
         let result: OCRAnalysisResult
-        do {
-            result = try await engine.analyze(ScreenshotAnalysisRequest(imageData: data))
-        } catch {
-            let raw = await engine.diagnosticTextObservations()
+        switch await engine.analyzeRetainingFailure(ScreenshotAnalysisRequest(imageData: data)) {
+        case .success(let analysis): result = analysis
+        case .failure(let failure):
             let encoder = JSONEncoder()
+            encoder.dateEncodingStrategy = .iso8601
             encoder.outputFormatting = [.prettyPrinted, .sortedKeys]
-            try encoder.encode(raw).write(
-                to: output.appendingPathExtension("raw-ocr.json"), options: .atomic
-            )
-            throw error
+            try encoder.encode(failure.rawTextObservations).write(
+                to: output.appendingPathExtension("raw-ocr.json"), options: .atomic)
+            try encoder.encode(failure).write(
+                to: output.appendingPathExtension("failed-analysis.json"), options: .atomic)
+            throw failure
         }
         let encoder = JSONEncoder()
         encoder.dateEncodingStrategy = .iso8601

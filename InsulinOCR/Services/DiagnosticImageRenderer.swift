@@ -24,6 +24,15 @@ actor DiagnosticImageRenderer {
     }
 
     func render(originalData: Data, result: OCRAnalysisResult) throws -> Data {
+        try render(originalData: originalData, result: result, observations: result.rawTextObservations)
+    }
+
+    func render(originalData: Data, failure: OCRFailedAnalysis) throws -> Data {
+        try render(originalData: originalData, result: nil, observations: failure.rawTextObservations)
+    }
+
+    private func render(originalData: Data, result: OCRAnalysisResult?,
+                        observations: [OCRRawTextObservation]) throws -> Data {
         guard let source = CGImageSourceCreateWithData(originalData as CFData, nil),
               let image = CGImageSourceCreateImageAtIndex(source, 0, nil) else {
             throw RenderError.invalidImage
@@ -51,7 +60,8 @@ actor DiagnosticImageRenderer {
         context.setLineJoin(.round)
         context.setLineCap(.round)
 
-        stroke(
+        if let result {
+            stroke(
             result.layout.plotFrame,
             color: CGColor(red: 0.1, green: 0.75, blue: 0.25, alpha: 0.95),
             width: 4,
@@ -59,8 +69,9 @@ actor DiagnosticImageRenderer {
             imageWidth: width,
             imageHeight: height
         )
+        }
 
-        for observation in result.rawTextObservations {
+        for observation in observations {
             stroke(
                 observation.boundingBox,
                 color: CGColor(red: 1, green: 0.78, blue: 0, alpha: 0.8),
@@ -71,7 +82,7 @@ actor DiagnosticImageRenderer {
             )
         }
 
-        for sample in result.glucoseSamples {
+        for sample in result?.glucoseSamples ?? [] {
             let color = sample.mmolPerLiter == nil
                 ? CGColor(red: 0.9, green: 0.1, blue: 0.1, alpha: 0.95)
                 : CGColor(red: 0.05, green: 0.05, blue: 0.05, alpha: 0.95)
@@ -85,7 +96,7 @@ actor DiagnosticImageRenderer {
             )
         }
 
-        for event in result.therapyEvents {
+        for event in result?.therapyEvents ?? [] {
             let color = switch event.kind {
             case .bolus:
                 CGColor(red: 0.24, green: 0.18, blue: 0.72, alpha: 0.95)
@@ -112,6 +123,7 @@ actor DiagnosticImageRenderer {
             )
         }
 
+        if let result {
         drawBasalPath(
             result.basalSteps,
             result: result,
@@ -119,6 +131,7 @@ actor DiagnosticImageRenderer {
             imageWidth: width,
             imageHeight: height
         )
+        }
 
         guard let rendered = context.makeImage(),
               let output = CFDataCreateMutable(nil, 0),

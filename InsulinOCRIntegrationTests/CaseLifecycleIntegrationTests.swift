@@ -7,6 +7,49 @@ import ZIPFoundation
 
 @MainActor
 final class CaseLifecycleIntegrationTests: XCTestCase {
+    func testFailedCalibrationExportsPartialOCRWithoutNumericOrCalibrationData() async throws {
+        let temporary = FileManager.default.temporaryDirectory.appendingPathComponent(UUID().uuidString)
+        defer { try? FileManager.default.removeItem(at: temporary) }
+        let store = ProtectedCaseFileStore(rootOverride: temporary.appendingPathComponent("Cases"))
+        let library = CaseLibraryStore(modelContainer: try PersistenceFactory.makeContainer(inMemory: true), fileStore: store)
+        let queue = AppGroupImportQueue(queueRootOverride: temporary.appendingPathComponent("Queue"))
+        let image = try XCTUnwrap(Data(base64Encoded: Self.onePixelPNG))
+        _ = try await queue.enqueue(imageData: image, originalFilename: "synthetic.png",
+                                    uniformTypeIdentifier: "public.png", captureTime: .now,
+                                    captureTimeSource: .importTime)
+        let pending = try await queue.pendingImports()
+        let imported = try await library.ingest(try XCTUnwrap(pending.first))
+        let raw = OCRRawTextObservation(region: .timeAxis,
+            boundingBox: OCRNormalizedRect(x: 0.2, y: 0.8, width: 0.1, height: 0.05),
+            candidates: [OCRTextCandidate(text: "02:00", confidence: 0.6)])
+        let failure = OCRFailedAnalysis(requestID: UUID(), createdAt: Date(timeIntervalSince1970: 1_730_000_000), algorithmVersion: "synthetic",
+            visionRevision: 3, code: .invalidTimeAxis, message: "Synthetic calibration failure",
+            rawTextObservations: [raw])
+        try library.storeAnalysisRun(caseID: imported.caseID, runID: failure.id,
+            createdAt: failure.createdAt, algorithmVersion: failure.algorithmVersion,
+            visionRevision: failure.visionRevision, status: .incomplete,
+            payload: StoredAnalysisFailureEnvelope(caseID: imported.caseID, failure: failure))
+        let diagnostic = try await DiagnosticImageRenderer().render(originalData: image, failure: failure)
+        _ = try await library.storeDiagnosticImage(caseID: imported.caseID, data: diagnostic)
+        let snapshot = try await CaseArchiveSnapshot.make(caseID: imported.caseID, library: library, fileStore: store)
+        XCTAssertNil(snapshot.activeAnalysis)
+        XCTAssertTrue(snapshot.computationRuns.isEmpty)
+        XCTAssertEqual(snapshot.originalData, image)
+        XCTAssertEqual(snapshot.diagnosticData, diagnostic)
+        let zip = try await CaseArchiveExporter().export(snapshot)
+        defer { try? FileManager.default.removeItem(at: zip) }
+        let expanded = temporary.appendingPathComponent("Expanded")
+        try FileManager.default.unzipItem(at: zip, to: expanded)
+        let root = expanded.appendingPathComponent("CaseArchive-v1")
+        let retained = try Data(contentsOf: root.appendingPathComponent("analysis/failures/\(failure.id).json"))
+        XCTAssertEqual(try JSONDecoder.insulinOCR.decode(StoredAnalysisFailureEnvelope.self, from: retained).failure, failure)
+        let rawData = try Data(contentsOf: root.appendingPathComponent("analysis/raw-ocr/\(failure.id).json"))
+        XCTAssertEqual(try JSONDecoder.insulinOCR.decode([OCRRawTextObservation].self, from: rawData), [raw])
+        XCTAssertFalse(FileManager.default.fileExists(atPath: root.appendingPathComponent("analysis/calibration/\(failure.id).json").path))
+        let checksums = try String(contentsOf: root.appendingPathComponent("checksums.sha256"), encoding: .utf8)
+        XCTAssertTrue(checksums.contains("analysis/failures/\(failure.id).json"))
+    }
+
     func testImportCorrectionSimulationAndExportRoundTrip() async throws {
         let temporaryRoot = FileManager.default.temporaryDirectory
             .appendingPathComponent("CaseLifecycle-\(UUID().uuidString)", isDirectory: true)

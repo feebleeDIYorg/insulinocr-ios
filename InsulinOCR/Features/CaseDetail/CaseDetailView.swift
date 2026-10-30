@@ -1,3 +1,4 @@
+import InsulinOCRCore
 import SwiftUI
 
 struct CaseDetailView: View {
@@ -5,6 +6,7 @@ struct CaseDetailView: View {
     @Bindable var library: CaseLibraryStore
     let record: CaseEntity
 
+    @State private var canCorrectAnalysis = false
     @State private var presentation: StoredCasePresentation?
     @State private var presentedSheet: PresentedSheet?
     @State private var exportURL: URL?
@@ -24,6 +26,7 @@ struct CaseDetailView: View {
         .navigationTitle(record.title)
         .toolbar { detailToolbar }
         .task(id: record.activeComputationRunID) { loadPresentation() }
+        .task(id: record.activeAnalysisRunID) { loadAnalysisAvailability() }
         .sheet(item: $presentedSheet) { sheet in
             switch sheet {
             case .captureTime:
@@ -134,7 +137,7 @@ struct CaseDetailView: View {
             Button("Korrigieren", systemImage: "scope") {
                 presentedSheet = .correction
             }
-            .disabled(record.activeAnalysisRunID == nil || record.status == .analyzing)
+            .disabled(!canCorrectAnalysis || record.status == .analyzing)
             Button("Simulation", systemImage: "function") {
                 presentedSheet = .simulation
             }
@@ -147,7 +150,7 @@ struct CaseDetailView: View {
                 Button("Mit aktuellen Parametern neu berechnen", systemImage: "arrow.triangle.2.circlepath") {
                     Task { await appModel.recomputeCase(caseID: record.id) }
                 }
-                .disabled(record.activeAnalysisRunID == nil || record.status == .analyzing)
+                .disabled(!canCorrectAnalysis || record.status == .analyzing)
                 Button("QA-Archiv exportieren", systemImage: "archivebox") {
                     Task { await exportCase() }
                 }
@@ -157,6 +160,16 @@ struct CaseDetailView: View {
             }
             .accessibilityIdentifier("case.actions")
         }
+    }
+
+    private func loadAnalysisAvailability() {
+        canCorrectAnalysis = false
+        guard let id = record.activeAnalysisRunID,
+              let entity = try? library.analysisRuns(caseID: record.id).first(where: { $0.id == id }) else { return }
+        canCorrectAnalysis = (try? JSONDecoder.insulinOCR.decode(StoredAnalysisEnvelope.self,
+                                                              from: entity.encodedPayload)) != nil
+            || (try? JSONDecoder.insulinOCR.decode(InsulinOCRCore.AnalysisRun.self,
+                                                  from: entity.encodedPayload)) != nil
     }
 
     private func loadPresentation() {

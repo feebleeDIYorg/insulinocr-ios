@@ -114,3 +114,24 @@ data.
 - No real health data enters source control or GitHub artifacts/logs.
 - QA archives are user-initiated and explicitly contain sensitive source data.
 - App Group, CloudKit, and signing entitlements are limited to their stated use.
+
+## Failed analysis attempts
+
+A versioned `OCRFailedAnalysis` retains request identity, requested capture metadata,
+algorithm/Vision versions, failure code/message and all OCR candidates observed
+before failure. The actor captures this value before releasing its synchronous
+pipeline; production callers never fetch a shared diagnostic buffer after a
+separate failed await. The original throwing engine API remains compatible.
+
+Failed attempts use the same immutable run storage and opaque CloudKit transport
+as successful runs. They have no fabricated calibration or therapy observations,
+clear active computation/correction pointers, and cannot enable correction or
+recomputation as if they had a valid domain model. The original image stays intact;
+the diagnostic overlay contains measured OCR boxes only.
+
+CaseArchive v1 includes the opaque run, an explicit `analysis/failures/<id>.json`
+record and its native raw observations in `analysis/raw-ocr/<id>.json`. Readers
+identify the failed envelope by its `failure` field and versioned schema; those
+raw observations include region and ranked candidates. No calibration file is
+invented for an uncalibrated attempt. Older successful envelopes remain readable.
+The CLI additionally writes a local `failed-analysis.json` sidecar on rejection.

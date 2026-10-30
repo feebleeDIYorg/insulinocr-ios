@@ -247,6 +247,14 @@ actor CaseArchiveExporter: CaseExporter {
 
         for run in snapshot.analysisRuns {
             try write(run.data, path: "analysis/runs/\(run.id.uuidString).json")
+            if let envelope = try? JSONDecoder.insulinOCR.decode(
+                StoredAnalysisFailureEnvelope.self, from: run.data
+            ) {
+                try write(run.data, path: "analysis/failures/\(run.id.uuidString).json")
+                try write(try encoder.encode(envelope.failure.rawTextObservations),
+                          path: "analysis/raw-ocr/\(run.id.uuidString).json")
+                continue
+            }
             let decoded: (run: AnalysisRun, warnings: [OCRAnalysisWarning])?
             if let envelope = try? JSONDecoder.insulinOCR.decode(
                 StoredAnalysisEnvelope.self,
