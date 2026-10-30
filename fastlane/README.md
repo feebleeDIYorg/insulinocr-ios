@@ -31,6 +31,14 @@ Generate the project and execute core, integration, and UI tests on Simulator
 
 Create or renew development and App Store profiles in the encrypted Match repository
 
+### ios signing_preflight
+
+```sh
+[bundle exec] fastlane ios signing_preflight
+```
+
+Verify existing signing access and encrypted profiles without uploading
+
 ### ios beta
 
 ```sh
