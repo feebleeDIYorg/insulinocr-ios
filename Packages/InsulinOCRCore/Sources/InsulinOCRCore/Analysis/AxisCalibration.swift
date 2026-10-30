@@ -105,6 +105,33 @@ enum OCRTextParser {
 }
 
 enum OCRObservationInterpreter {
+    /// Full-image text may corroborate a pill only when its entire box belongs
+    /// to exactly one complete stem. Multi-pill lines and shared evidence must
+    /// not supply an amount to a neighbouring or overlapping event.
+    static func eventTextEvidence(
+        from observations: [OCRRawTextObservation],
+        for stem: OCRDetectedEventStem,
+        among stems: [OCRDetectedEventStem]
+    ) -> [OCRRawTextObservation] {
+        observations.filter { observation in
+            let box = observation.boundingBox
+            guard observation.region == .fullImage,
+                  [box.x, box.y, box.width, box.height].allSatisfy(\.isFinite),
+                  box.minX >= 0, box.minY >= 0, box.maxX <= 1, box.maxY <= 1,
+                  box.width > 0, box.height > 0,
+                  box.minX <= stem.stemRect.midX,
+                  stem.stemRect.midX <= box.maxX else { return false }
+            let owners = stems.filter { candidate in
+                candidate.isComplete
+                    && candidate.pillRect.minX <= box.minX
+                    && candidate.pillRect.maxX >= box.maxX
+                    && candidate.pillRect.minY <= box.minY
+                    && candidate.pillRect.maxY >= box.maxY
+            }
+            return owners.count == 1 && owners[0] == stem
+        }
+    }
+
     static func timeAnchors(
         from observations: [OCRRawTextObservation],
         horizontalRange: ClosedRange<Double>

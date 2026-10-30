@@ -13,7 +13,7 @@ public struct NativeAnalysisConfiguration: Sendable, Equatable {
     public let maximumTimeResidualMinutes: Double
 
     public init(
-        algorithmVersion: String = "native-1.7.0",
+        algorithmVersion: String = "native-1.8.0",
         minimumBasalCoverage: Double = 0.99,
         maximumTimeResidualMinutes: Double = 1
     ) {
@@ -228,7 +228,10 @@ public actor NativeAnalysisEngine: AnalysisEngine {
                 minimumTextHeight: 0.02
             )
             rawObservations += pillObservations
-            let candidates = pillObservations
+            let evidence = pillObservations + OCRObservationInterpreter.eventTextEvidence(
+                from: rawObservations, for: stem, among: stems
+            )
+            let candidates = evidence
                 .flatMap(\.candidates)
                 .sorted { $0.confidence > $1.confidence }
             let parsed = OCRTextParser.amount(from: candidates, expectedKind: stem.kind)
@@ -244,7 +247,7 @@ public actor NativeAnalysisEngine: AnalysisEngine {
                     confidence: min(stem.confidence, parsed.2 == 0 ? stem.confidence * 0.65 : parsed.2),
                     provenance: OCRProvenance(
                         kind: .visionText,
-                        sourceObservationIDs: pillObservations.map(\.id),
+                        sourceObservationIDs: evidence.map(\.id),
                         note: parsed.0.value == nil
                             ? "Complete event stem found geometrically; no safe amount was recognized."
                             : nil
