@@ -42,11 +42,11 @@ final class FailedAnalysisTests: XCTestCase {
         let request = ScreenshotAnalysisRequest(imageData: bytes as Data)
         let result = await NativeAnalysisEngine().analyzeRetainingFailure(request)
         guard case .failure(let failure) = result else { return XCTFail("Portrait layout accepted") }
-        XCTAssertEqual(failure.code, .unsupportedLayout)
+        XCTAssertEqual(failure.code, .unsupportedLayout, failure.message)
         XCTAssertEqual(failure.requestID, request.id)
         XCTAssertTrue(failure.rawTextObservations.contains {
             $0.region == .fullImage && $0.candidates.contains { $0.text == "02:00" }
-        })
+        }, failure.message)
     }
 
     func testConcurrentInvalidRequestsKeepTheirOwnFailureIdentity() async throws {
