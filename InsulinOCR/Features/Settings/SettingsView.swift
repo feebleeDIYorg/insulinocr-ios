@@ -28,7 +28,7 @@ struct SettingsView: View {
 
     private var therapySection: some View {
         Section {
-            Picker("Insulinwirkdauer", selection: $settings.diaMinutes) {
+            Picker("Insulinwirkdauer (DIA)", selection: $settings.diaMinutes) {
                 ForEach(Array(stride(from: 180, through: 600, by: 30)), id: \.self) { minutes in
                     Text(durationLabel(minutes)).tag(minutes)
                 }
@@ -38,7 +38,7 @@ struct SettingsView: View {
                     Text("\(preset.localizedName), Peak \(preset.peakMinutes) min").tag(preset)
                 }
             }
-            Picker("KH-Wirkdauer", selection: $settings.carbAbsorptionMinutes) {
+            Picker("KH-Absorptionsdauer", selection: $settings.carbAbsorptionMinutes) {
                 ForEach(Array(stride(from: 120, through: 480, by: 30)), id: \.self) { minutes in
                     Text(durationLabel(minutes)).tag(minutes)
                 }
@@ -46,7 +46,7 @@ struct SettingsView: View {
         } header: {
             Text("Wirkmodelle")
         } footer: {
-            Text("Änderungen überschreiben keine historischen Ergebnisse. Erst eine explizite Neuberechnung erzeugt einen neuen Rechenlauf.")
+            Text("DIA ist die gesamte Insulinwirkdauer im Modell, angegeben in Stunden. Der Peak bezeichnet die stärkste Modellwirkung in Minuten nach der Abgabe. Die KH-Absorptionsdauer bestimmt den Abbau der Kohlenhydrate nach zehn Minuten Verzögerung. Änderungen überschreiben keine historischen Ergebnisse. Eine explizite Neuberechnung erzeugt einen neuen Rechenlauf.")
         }
     }
 

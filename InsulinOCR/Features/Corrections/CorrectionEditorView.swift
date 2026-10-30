@@ -11,6 +11,8 @@ struct CorrectionEditorView: View {
     @State private var analysisRun: AnalysisRun?
     @State private var drafts: [ObservationDraft] = []
     @State private var selectedObservationID: UUID?
+    @State private var filter: ReviewFilter = .unconfirmed
+    @State private var visibleLimit = 20
     @State private var note = ""
     @State private var isSaving = false
     @State private var errorMessage: String?
@@ -59,13 +61,51 @@ struct CorrectionEditorView: View {
                 .font(.footnote)
                 .foregroundStyle(.secondary)
 
-                ForEach($drafts) { $draft in
-                    ObservationDraftCard(
-                        draft: $draft,
-                        isSelected: selectedObservationID == draft.id
-                    ) {
-                        selectedObservationID = draft.id
+                LabeledContent("Datenpunkte filtern") {
+                    Picker("Datenpunkte filtern", selection: $filter) {
+                        ForEach(ReviewFilter.allCases) { option in
+                            Text(option.title).tag(option)
+                        }
                     }
+                    .labelsHidden()
+                    .accessibilityIdentifier("correction.filter")
+                }
+                Text("\(filteredDrafts.count) von \(drafts.count) Datenpunkten. Zum Bearbeiten einen Eintrag öffnen. Alle Werte bleiben im QA-Export enthalten.")
+                    .font(.footnote)
+                    .foregroundStyle(.secondary)
+
+                if let selected = drafts.first(where: { $0.id == selectedObservationID }) {
+                    Text("Ausgewählter Datenpunkt").font(.headline)
+                    ObservationDraftCard(draft: binding(for: selected), isSelected: true) {}
+                        .accessibilityIdentifier("correction.selected")
+                }
+                if filteredDrafts.isEmpty {
+                    Text("Keine Datenpunkte in diesem Filter. Andere Typen lassen sich über das Filtermenü auswählen.")
+                        .foregroundStyle(.secondary)
+                }
+                ForEach(filteredDrafts.prefix(visibleLimit)) { draft in
+                    Button {
+                        selectedObservationID = draft.id
+                    } label: {
+                        HStack(alignment: .firstTextBaseline) {
+                            VStack(alignment: .leading, spacing: 4) {
+                                Text(draft.kindTitle).font(.subheadline.weight(.semibold))
+                                Text(draft.startDate, format: .dateTime.day().month().hour().minute())
+                                    .font(.caption).foregroundStyle(.secondary)
+                            }
+                            Spacer()
+                            Text(draft.amountText.isEmpty ? "Menge unbekannt" : draft.amountText)
+                                .monospacedDigit()
+                            Image(systemName: "pencil")
+                                .accessibilityHidden(true)
+                        }
+                        .frame(maxWidth: .infinity, alignment: .leading)
+                        .padding(.vertical, 8)
+                    }
+                    .accessibilityIdentifier("correction.observation")
+                }
+                if filteredDrafts.count > visibleLimit {
+                    Button("Weitere 20 Datenpunkte anzeigen") { visibleLimit += 20 }
                 }
 
                 Menu("Beobachtung hinzufügen", systemImage: "plus") {
@@ -82,6 +122,22 @@ struct CorrectionEditorView: View {
             .frame(maxWidth: 820, alignment: .leading)
             .padding()
         }
+        .onChange(of: filter) { visibleLimit = 20 }
+    }
+
+    private var filteredDrafts: [ObservationDraft] {
+        drafts.filter { filter.includes($0) }
+    }
+
+    private func binding(for draft: ObservationDraft) -> Binding<ObservationDraft> {
+        Binding(
+            get: { drafts.first(where: { $0.id == draft.id }) ?? draft },
+            set: { replacement in
+                if let index = drafts.firstIndex(where: { $0.id == draft.id }) {
+                    drafts[index] = replacement
+                }
+            }
+        )
     }
 
     @ToolbarContentBuilder
@@ -148,6 +204,8 @@ struct CorrectionEditorView: View {
                     ? $0.id.uuidString < $1.id.uuidString
                     : $0.startDate < $1.startDate
             }.map(ObservationDraft.init)
+            filter = drafts.contains(where: { $0.amountText.isEmpty }) ? .unconfirmed : .basal
+            selectedObservationID = filteredDrafts.first?.id
         } catch {
             errorMessage = error.localizedDescription
         }
@@ -179,6 +237,29 @@ struct CorrectionEditorView: View {
     }
 }
 
+private enum ReviewFilter: String, CaseIterable, Identifiable {
+    case unconfirmed, events, basal, glucose, all
+    var id: String { rawValue }
+    var title: String {
+        switch self {
+        case .unconfirmed: "Unbestätigte Mengen"
+        case .events: "Bolus und Kohlenhydrate"
+        case .basal: "Basalraten"
+        case .glucose: "Glukose"
+        case .all: "Alle Datenpunkte"
+        }
+    }
+    func includes(_ draft: ObservationDraft) -> Bool {
+        switch self {
+        case .unconfirmed: draft.amountText.isEmpty
+        case .events: [.bolus, .carbohydrate, .eventStem].contains(draft.kind)
+        case .basal: draft.kind == .basalRate
+        case .glucose: draft.kind == .glucose
+        case .all: true
+        }
+    }
+}
+
 private struct ObservationDraft: Identifiable, Equatable {
     let id: UUID
     let original: RawObservation?
@@ -206,6 +287,16 @@ private struct ObservationDraft: Identifiable, Equatable {
         endDate = newKind == .basalRate ? date.addingTimeInterval(300) : nil
         amountText = ""
         isDeleted = false
+    }
+
+    var kindTitle: String {
+        switch kind {
+        case .basalRate: "Basalrate (IE/h)"
+        case .glucose: "Glukose (mmol/l)"
+        case .bolus: "Bolus (IE)"
+        case .carbohydrate: "Kohlenhydrate (g)"
+        case .eventStem: "Unklassifiziertes Ereignis"
+        }
     }
 
     var parsedAmount: Double? {

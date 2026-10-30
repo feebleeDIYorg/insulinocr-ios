@@ -29,7 +29,7 @@ final class ScreenshotFlowUITests: XCTestCase {
         XCTAssertTrue(destination.waitForExistence(timeout: 8), host.debugDescription)
         // The system share cell changes its padding between iOS versions.
         // Select its actual image instead of estimating a point in that cell.
-        let namedActivityImage = destination.images["activityImageView"]
+        let namedActivityImage = destination.images.matching(identifier: "activityImageView").firstMatch
         let activityImage = namedActivityImage.exists ? namedActivityImage : destination.images.firstMatch
         XCTAssertTrue(activityImage.waitForExistence(timeout: 5), host.debugDescription)
         activityImage.tap()
@@ -49,7 +49,14 @@ final class ScreenshotFlowUITests: XCTestCase {
         }
         XCTAssertTrue(caseRow(in: app).waitForExistence(timeout: 30), app.debugDescription)
         caseRow(in: app).tap()
-        XCTAssertTrue(app.buttons["Korrigieren"].waitForExistence(timeout: 5), app.debugDescription)
+        let correctAction = app.buttons["Korrigieren"]
+        XCTAssertTrue(correctAction.waitForExistence(timeout: 5), app.debugDescription)
+        // UIKit menus capture enabled states when presented. Wait on the live
+        // SwiftUI control before opening a menu during a newly imported analysis.
+        let importedAnalysisReady = expectation(
+            for: NSPredicate(format: "enabled == true"), evaluatedWith: correctAction)
+        XCTAssertEqual(XCTWaiter.wait(for: [importedAnalysisReady], timeout: 30), .completed,
+                       app.debugDescription)
         // Re-imports deduplicate. Exercise the current extractor and retain the
         // prior immutable analysis/corrections when repeating this test.
         toolbarAction("case.actions", in: app).tap()

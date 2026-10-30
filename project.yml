@@ -164,6 +164,8 @@ targets:
     deploymentTarget: "18.0"
     sources:
       - path: InsulinOCRTests
+      - path: InsulinOCRUITests/Fixtures
+        type: folder
     dependencies:
       - target: InsulinOCR
       - package: InsulinOCRCore
@@ -254,3 +256,16 @@ schemes:
           parallelizable: false
     archive:
       config: Release
+  InsulinOCRDeviceBenchmark:
+    build:
+      targets:
+        InsulinOCR: all
+        InsulinOCRTests: [test]
+    test:
+      config: Debug
+      gatherCoverageData: false
+      environmentVariables:
+        INSULINOCR_DEVICE_BENCHMARK: "1"
+      targets:
+        - name: InsulinOCRTests
+          parallelizable: false
