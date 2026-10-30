@@ -1,6 +1,7 @@
 require "base64"
 require_relative "lib/insulinocr_credentials"
 require_relative "lib/insulinocr_build_configuration"
+require_relative "lib/insulinocr_delivery_status"
 
 default_platform(:ios)
 
@@ -18,8 +19,8 @@ def configured_app_identifiers
 end
 
 def prepare_signing
-  InsulinOCRBuildConfiguration.prepare(PROJECT_ROOT, signing: true)
-  generate_project
+  InsulinOCRDeliveryStatus.around("configuration") { InsulinOCRBuildConfiguration.prepare(PROJECT_ROOT, signing: true) }
+  InsulinOCRDeliveryStatus.around("project_generation") { generate_project }
 end
 TESTFLIGHT_GROUP = "InsulinOCR Internal"
 
@@ -39,17 +40,19 @@ end
 
 def read_only_signing_preflight
   ensure_env_vars(env_vars: %w[MATCH_PASSWORD])
-  key = app_store_connect_key
-  setup_ci if ENV["CI"] == "true"
-  sync_code_signing(
-    type: "appstore",
-    app_identifier: configured_app_identifiers,
-    team_id: ENV.fetch("APPLE_TEAM_ID"),
-    api_key: key,
-    git_url: ENV.fetch("MATCH_GIT_URL"),
-    git_branch: "main",
-    readonly: true
-  )
+  key = InsulinOCRDeliveryStatus.around("apple_key") { app_store_connect_key }
+  InsulinOCRDeliveryStatus.around("keychain") { setup_ci } if ENV["CI"] == "true"
+  InsulinOCRDeliveryStatus.around("match") do
+    sync_code_signing(
+      type: "appstore",
+      app_identifier: configured_app_identifiers,
+      team_id: ENV.fetch("APPLE_TEAM_ID"),
+      api_key: key,
+      git_url: ENV.fetch("MATCH_GIT_URL"),
+      git_branch: "main",
+      readonly: true
+    )
+  end
   key
 end
 
@@ -115,18 +118,21 @@ platform :ios do
     prepare_signing
     key = read_only_signing_preflight
 
-    next_build_number = latest_testflight_build_number(
+    next_build_number = InsulinOCRDeliveryStatus.around("app_store_build_number") do
+      latest_testflight_build_number(
       api_key: key,
       app_identifier: configured_app_identifier,
       initial_build_number: 0
-    ) + 1
+      ) + 1
+    end
 
     increment_build_number(
       build_number: next_build_number,
       xcodeproj: PROJECT
     )
 
-    build_app(
+    InsulinOCRDeliveryStatus.around("archive") do
+      build_app(
       project: PROJECT,
       scheme: SCHEME,
       clean: true,
@@ -140,15 +146,18 @@ platform :ios do
         teamID: ENV.fetch("APPLE_TEAM_ID"),
         provisioningProfiles: configured_app_identifiers.to_h { |identifier| [identifier, "match AppStore #{identifier}"] }
       }
-    )
+      )
+    end
 
-    upload_to_testflight(
+    InsulinOCRDeliveryStatus.around("upload") do
+      upload_to_testflight(
       api_key: key,
       app_identifier: configured_app_identifier,
       changelog: options[:release_notes] || ENV.fetch("RELEASE_NOTES", "Internaler InsulinOCR-Testbuild"),
       groups: [TESTFLIGHT_GROUP],
       distribute_external: false,
       skip_waiting_for_build_processing: false
-    )
+      )
+    end
   end
 end
