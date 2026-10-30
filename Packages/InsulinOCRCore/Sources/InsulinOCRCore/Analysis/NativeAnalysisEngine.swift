@@ -37,13 +37,38 @@ public actor NativeAnalysisEngine: AnalysisEngine {
 
     public func analyze(_ request: ScreenshotAnalysisRequest) async throws -> OCRAnalysisResult {
         do {
-            return try await analyzeUnchecked(request)
+            return try analyzeUnchecked(request)
         } catch is CancellationError {
             throw OCRAnalysisFailure.cancelled
         }
     }
 
-    private func analyzeUnchecked(_ request: ScreenshotAnalysisRequest) async throws -> OCRAnalysisResult {
+    /// Captures partial OCR before releasing this actor. The synchronous private
+    /// pipeline cannot interleave another request between failure and snapshot.
+    public func analyzeRetainingFailure(
+        _ request: ScreenshotAnalysisRequest
+    ) async -> Result<OCRAnalysisResult, OCRFailedAnalysis> {
+        do {
+            return .success(try analyzeUnchecked(request))
+        } catch {
+            let code: OCRFailedAnalysis.Code
+            switch error {
+            case OCRAnalysisFailure.invalidImage: code = .invalidImage
+            case OCRAnalysisFailure.unsupportedLayout: code = .unsupportedLayout
+            case OCRAnalysisFailure.invalidTimeAxis: code = .invalidTimeAxis
+            case OCRAnalysisFailure.cancelled, is CancellationError: code = .cancelled
+            default: code = .processingFailed
+            }
+            return .failure(OCRFailedAnalysis(
+                requestID: request.id, algorithmVersion: configuration.algorithmVersion,
+                visionRevision: Int(VNRecognizeTextRequestRevision3), code: code,
+                message: error.localizedDescription, rawTextObservations: latestObservations,
+                requestedCaptureTime: request.capturedAt, importedAt: request.importedAt,
+                timeZoneIdentifier: request.timeZoneIdentifier))
+        }
+    }
+
+    private func analyzeUnchecked(_ request: ScreenshotAnalysisRequest) throws -> OCRAnalysisResult {
         latestObservations = []
         try Task.checkCancellation()
         guard let imageSource = CGImageSourceCreateWithData(request.imageData as CFData, nil),
@@ -65,6 +90,7 @@ public actor NativeAnalysisEngine: AnalysisEngine {
             kind: .fullImage,
             minimumTextHeight: 0.006
         )
+        latestObservations = rawObservations
         try Task.checkCancellation()
 
         let layoutEvidence = try OCRLayoutDetector.detect(
@@ -115,6 +141,7 @@ public actor NativeAnalysisEngine: AnalysisEngine {
                 kind: kind,
                 minimumTextHeight: minimumTextHeight
             )
+            latestObservations = rawObservations
         }
 
         latestObservations = rawObservations
@@ -228,6 +255,7 @@ public actor NativeAnalysisEngine: AnalysisEngine {
                 minimumTextHeight: 0.02
             )
             rawObservations += pillObservations
+            latestObservations = rawObservations
             let evidence = pillObservations + OCRObservationInterpreter.eventTextEvidence(
                 from: rawObservations, for: stem, among: stems
             )

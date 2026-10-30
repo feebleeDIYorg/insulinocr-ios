@@ -265,7 +265,32 @@ final class AppModel {
                 importedAt: record.createdAt,
                 timeZoneIdentifier: record.captureTimeZoneIdentifier
             )
-            let extractorResult = try await analysisEngine.analyze(request)
+            let extractorResult: OCRAnalysisResult
+            switch await analysisEngine.analyzeRetainingFailure(request) {
+            case .success(let result): extractorResult = result
+            case .failure(let failure):
+                let status: StoredCaseStatus = switch failure.code {
+                case .unsupportedLayout: .unsupportedLayout
+                case .invalidTimeAxis: .incomplete
+                case .invalidImage, .cancelled, .processingFailed: .failed
+                }
+                try library.storeAnalysisRun(
+                    caseID: record.id, runID: failure.id, createdAt: failure.createdAt,
+                    algorithmVersion: failure.algorithmVersion, visionRevision: failure.visionRevision,
+                    status: status, payload: StoredAnalysisFailureEnvelope(caseID: record.id, failure: failure))
+                let reason: String = switch failure.code {
+                case .invalidTimeAxis: "Die Zeitbeschriftungen konnten nicht sicher zugeordnet werden. Der Screenshot und die bisherige OCR sind für die Prüfung gespeichert."
+                case .unsupportedLayout: "Dieses Screenshot-Layout wird noch nicht unterstützt."
+                case .invalidImage: "Das Bild konnte nicht gelesen werden."
+                case .cancelled: "Die Analyse wurde abgebrochen."
+                case .processingFailed: "Die Bildanalyse konnte nicht abgeschlossen werden. Diagnoseinformationen sind im QA-Archiv enthalten."
+                }
+                if let diagnostic = try? await diagnosticRenderer.render(originalData: data, failure: failure) {
+                    _ = try? await library.storeDiagnosticImage(caseID: record.id, data: diagnostic)
+                }
+                try library.updateStatus(caseID: record.id, status: status, reason: reason)
+                return
+            }
             let analysisRun = extractorResult.makeAnalysisRun(caseID: record.id)
             if let diagnostic = try? await diagnosticRenderer.render(originalData: data, result: extractorResult) {
                 _ = try? await library.storeDiagnosticImage(caseID: record.id, data: diagnostic)
