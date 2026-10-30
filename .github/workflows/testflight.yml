@@ -1,0 +1,100 @@
+name: testflight
+
+on:
+  workflow_dispatch:
+    inputs:
+      mode:
+        description: Read-only signing check or explicitly requested upload
+        required: true
+        default: preflight
+        type: choice
+        options: [preflight, upload]
+      release_notes:
+        description: Internal TestFlight release notes
+        required: true
+        type: string
+
+permissions:
+  contents: read
+
+concurrency:
+  group: testflight-upload
+  cancel-in-progress: false
+
+jobs:
+  upload:
+    if: github.ref == 'refs/heads/main'
+    runs-on: xcode-27
+    timeout-minutes: 90
+    environment: testflight
+    env:
+      CI: "true"
+      FASTLANE_OPT_OUT_USAGE: "1"
+      FASTLANE_SKIP_UPDATE_CHECK: "1"
+      DEVELOPER_DIR: /Applications/Xcode_27.1.app/Contents/Developer
+      XCODEGEN_VERSION: 2.42.0
+      XCODEGEN_SHA256: a760b4bf97460341316a2c00d8c87b2946c6c2729eb57e9a72abb3ef7bc0ef82
+      SIMULATOR_DEVICE: iPhone 17
+      SIMULATOR_OS: "27.0"
+    steps:
+      - name: Checkout
+        uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
+        with:
+          persist-credentials: false
+
+      - name: Verify Xcode
+        run: |
+          set -euo pipefail
+          test "$(xcodebuild -version | sed -n '1p')" = "Xcode 27.1"
+          test "$(xcodebuild -version | sed -n '2p')" = "Build version 27A9275"
+
+      - name: Install pinned XcodeGen
+        run: |
+          set -euo pipefail
+          archive="${RUNNER_TEMP}/xcodegen.zip"
+          curl --fail --location --retry 3 \
+            "https://github.com/yonaskolb/XcodeGen/releases/download/${XCODEGEN_VERSION}/xcodegen.zip" \
+            --output "${archive}"
+          actual_sha256="$(shasum -a 256 "${archive}" | awk '{print $1}')"
+          test "${actual_sha256}" = "${XCODEGEN_SHA256}"
+          ditto -x -k "${archive}" "${RUNNER_TEMP}/xcodegen"
+          binary_path="$(find "${RUNNER_TEMP}/xcodegen" -type f -name xcodegen -print -quit)"
+          test -n "${binary_path}"
+          binary_directory="$(dirname "${binary_path}")"
+          test -f "${binary_directory}/../share/xcodegen/SettingPresets/base.yml"
+          chmod 755 "${binary_path}"
+          echo "${binary_directory}" >> "${GITHUB_PATH}"
+
+      - name: Set up pinned Ruby and gems
+        uses: ruby/setup-ruby@7f797815d8adceb1c412e7abefdd1ab4abc47a5f # v1.335.0
+        with:
+          ruby-version: 3.4.12
+          bundler: 4.0.20
+          bundler-cache: true
+
+      - name: Verify pinned Ruby dependencies
+        run: |
+          set -euo pipefail
+          test "$(ruby -e 'print RUBY_VERSION')" = "3.4.12"
+          bundle exec ruby -rbundler -e 'abort("Unexpected Bundler #{Bundler::VERSION}") unless Bundler::VERSION == "4.0.20"'
+          test "$(xcodegen --version | awk '{print $2}')" = "${XCODEGEN_VERSION}"
+          bundle check
+          bundle exec ruby -e 'abort unless Gem::Specification.find_by_name("fastlane").version.to_s == "2.241.1"'
+          git diff --exit-code -- Gemfile.lock
+
+      - name: Verify synthetic Simulator flow without signing secrets
+        run: bundle exec fastlane ios test
+
+      - name: Upload internal TestFlight build
+        env:
+          INSULINOCR_BUILD_CONFIG: ${{ secrets.INSULINOCR_BUILD_CONFIG }}
+          TEAMID: ${{ secrets.TEAMID }}
+          FASTLANE_KEY_ID: ${{ secrets.FASTLANE_KEY_ID }}
+          FASTLANE_ISSUER_ID: ${{ secrets.FASTLANE_ISSUER_ID }}
+          FASTLANE_KEY: ${{ secrets.FASTLANE_KEY }}
+          GH_PAT: ${{ secrets.GH_PAT }}
+          MATCH_PASSWORD: ${{ secrets.MATCH_PASSWORD }}
+          MATCH_READONLY: "true"
+          INSULINOCR_DELIVERY_MODE: ${{ inputs.mode }}
+          RELEASE_NOTES: ${{ inputs.release_notes }}
+        run: bundle exec ruby Scripts/run_testflight.rb

@@ -1,0 +1,82 @@
+# Release and TestFlight runbook
+
+TestFlight delivery is intentionally manual. A release is blocked until every
+item below is satisfied.
+
+## One-time Apple and GitHub setup
+
+1. Publish only a reviewed, sanitized source snapshot. Keep signing storage
+   private and reuse an authorized existing store where possible.
+2. Register app/extension identifiers, an App Group and a CloudKit container
+   in your Apple account. Supply account-specific values outside Git.
+3. Configure the App Store Connect app and an internal TestFlight group.
+4. Reuse a suitable existing App Store Connect key and approved repository
+   authentication. Confirm permissions and encrypted-store compatibility.
+5. Bootstrap signing only on an authorized workstation. CI must use read-only
+   Match and must not regenerate, revoke or publish signing material.
+6. Configure main-only deployment, required review and protected branch checks
+   before any delivery workflow is run.
+
+## Credentials supplied outside Git
+
+Prefer one complete existing Apple credential family:
+
+- FASTLANE_KEY_ID, FASTLANE_ISSUER_ID, FASTLANE_KEY (raw PEM content), or
+- ASC_KEY_ID, ASC_ISSUER_ID, ASC_KEY_CONTENT_BASE64 (base64 content).
+
+The two families are never mixed. Configure TEAMID/APPLE_TEAM_ID privately.
+MATCH_PASSWORD must match the chosen encrypted signing store; do not assume
+an unrelated existing password works. Supply the private Match URL through INSULINOCR_BUILD_CONFIG; see
+[the configuration contract](BUILD_CONFIGURATION.md). Reuse an existing authorized GH_PAT for HTTPS Match access when
+available. No new signing GitHub App is created.
+
+Configure main-only deployment and review protections before delivery. Do not
+print secret values or upload private signing artifacts. Match remains read-only
+in CI; only an authorized local bootstrap may update signing material.
+
+## Preflight
+
+- [`xcode-27`](https://github.com/actions/runner-images/issues/14404) is the
+  GitHub-hosted Apple-silicon runner label, not a self-hosted runner
+  requirement. The workflow still verifies the exact Xcode version and build
+  before executing repository code.
+- Xcode is exactly 27.1 (`27A9275`) and XcodeGen is 2.42.0.
+- Ruby is 3.4.12, Bundler is 4.0.20, Fastlane is 2.241.1, and
+  `bundle check` succeeds against the committed `Gemfile.lock`.
+- CI passes with no signing secrets.
+- Release gates for layout rejection, axes, basal, glucose, events, mathematical
+  goldens, fail-closed behavior, performance, archive roundtrip, and end-to-end
+  import all pass.
+- CloudKit two-device roundtrip and correction-conflict behavior are confirmed.
+- CloudKit schema is deployed to production.
+- App, extension, App Group, CloudKit, push, and data-protection entitlements are
+  present in the distribution profiles.
+- Privacy manifest and App Privacy answers match the code; no tracking is added.
+- No personal fixture, archive, credential, key, profile, or diagnostic log is
+  present in Git history or workflow artifacts.
+- TestFlight copy states that output is experimental, is not a medical device,
+  and is not a dosing recommendation.
+
+## Upload
+
+First run `testflight` in its default `preflight` mode and approve the protected
+Environment to verify existing signing credentials without uploading. Only after
+all release gates pass, select `upload`, enter concise release notes, and approve
+the Environment again. The workflow:
+
+1. verifies the exact Xcode build;
+2. runs package, app, integration, and UI tests;
+3. reads Match with `readonly: true`;
+4. selects the next build number from App Store Connect;
+5. archives and uploads to `InsulinOCR Internal`.
+
+The marketing version is changed deliberately in source. Build numbers are
+monotonic App Store Connect values and are independent of archive schema,
+analysis algorithm, and activity-model versions.
+
+## Device acceptance
+
+Before promoting a build, complete one physical target-iPhone run of the whole
+flow: share screenshot, analyze, review/correct, simulate, export, close, reopen,
+and verify the frozen reference time. Record the Case ID, app build, and algorithm
+version with TestFlight feedback; do not attach source health data to GitHub.

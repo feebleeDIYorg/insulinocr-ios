@@ -1,0 +1,151 @@
+name: ci
+
+on:
+  workflow_dispatch:
+  push:
+    branches: [main]
+  pull_request:
+    branches: [main]
+
+permissions:
+  contents: read
+
+concurrency:
+  group: ci-${{ github.ref }}
+  cancel-in-progress: true
+
+jobs:
+  delivery-config:
+    runs-on: xcode-27
+    timeout-minutes: 15
+    env:
+      FASTLANE_OPT_OUT_USAGE: "1"
+      FASTLANE_SKIP_UPDATE_CHECK: "1"
+      CI: "true"
+    steps:
+      - name: Checkout
+        uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
+        with:
+          persist-credentials: false
+
+      - name: Set up pinned Ruby and gems
+        uses: ruby/setup-ruby@7f797815d8adceb1c412e7abefdd1ab4abc47a5f # v1.335.0
+        with:
+          ruby-version: 3.4.12
+          bundler: 4.0.20
+          bundler-cache: true
+
+      - name: Validate delivery dependencies and lane definitions
+        run: |
+          set -euo pipefail
+          test "$(ruby -e 'print RUBY_VERSION')" = "3.4.12"
+          bundle exec ruby -rbundler -e 'abort("Unexpected Bundler #{Bundler::VERSION}") unless Bundler::VERSION == "4.0.20"'
+          bundle check
+          bundle exec ruby -e 'abort unless Gem::Specification.find_by_name("fastlane").version.to_s == "2.241.1"'
+          bundle exec ruby -c fastlane/Fastfile
+          bundle exec ruby -c fastlane/Appfile
+          bundle exec ruby -c fastlane/Matchfile
+          bundle exec ruby Scripts/test_fastlane_credentials.rb
+          bundle exec ruby Scripts/test_build_configuration.rb
+          bundle exec fastlane lanes
+          git diff --exit-code -- Gemfile.lock
+
+  test:
+    runs-on: xcode-27
+    timeout-minutes: 45
+    env:
+      APPLE_TEAM_ID: SIMULATOR1
+      DEVELOPER_DIR: /Applications/Xcode_27.1.app/Contents/Developer
+      XCODEGEN_VERSION: 2.42.0
+      XCODEGEN_SHA256: a760b4bf97460341316a2c00d8c87b2946c6c2729eb57e9a72abb3ef7bc0ef82
+      SIMULATOR_DEVICE: iPhone 17
+      SIMULATOR_OS: "27.0"
+    steps:
+      - name: Checkout
+        uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
+        with:
+          persist-credentials: false
+
+      - name: Verify Xcode
+        run: |
+          set -euo pipefail
+          test "$(xcodebuild -version | sed -n '1p')" = "Xcode 27.1"
+          test "$(xcodebuild -version | sed -n '2p')" = "Build version 27A9275"
+
+      - name: Install pinned XcodeGen
+        run: |
+          set -euo pipefail
+          archive="${RUNNER_TEMP}/xcodegen.zip"
+          curl --fail --location --retry 3 \
+            "https://github.com/yonaskolb/XcodeGen/releases/download/${XCODEGEN_VERSION}/xcodegen.zip" \
+            --output "${archive}"
+          actual_sha256="$(shasum -a 256 "${archive}" | awk '{print $1}')"
+          test "${actual_sha256}" = "${XCODEGEN_SHA256}"
+          ditto -x -k "${archive}" "${RUNNER_TEMP}/xcodegen"
+          binary_path="$(find "${RUNNER_TEMP}/xcodegen" -type f -name xcodegen -print -quit)"
+          test -n "${binary_path}"
+          binary_directory="$(dirname "${binary_path}")"
+          test -f "${binary_directory}/../share/xcodegen/SettingPresets/base.yml"
+          chmod 755 "${binary_path}"
+          echo "${binary_directory}" >> "${GITHUB_PATH}"
+
+      - name: Generate project
+        run: |
+          set -euo pipefail
+          test "$(xcodegen --version | awk '{print $2}')" = "${XCODEGEN_VERSION}"
+          xcodegen generate --spec project.yml
+
+      - name: Resolve Swift packages
+        run: xcodebuild -resolvePackageDependencies -project InsulinOCR.xcodeproj -scheme InsulinOCR
+
+      - name: Test core package
+        run: swift test --package-path Packages/InsulinOCRCore
+
+      - name: Test offline reference comparison with synthetic data
+        run: python3 -m unittest discover -s Scripts -p 'test_*.py' -v
+
+      - name: Prepare synthetic screenshot share host
+        # The separately installed host exercises the real NSItemProvider/share extension.
+        # Ad-hoc signing grants Simulator App Groups without Apple credentials.
+        # A single destination retains the host installation throughout the UI test.
+        run: |
+          set -euo pipefail
+          python3 Scripts/prepare_ui_test_host.py \
+            --device "${SIMULATOR_DEVICE}" --os "${SIMULATOR_OS}" \
+            --derived-data build/DerivedData
+
+      - name: Execute app integration and UI tests
+        run: |
+          set -euo pipefail
+          xcodebuild test \
+            -project InsulinOCR.xcodeproj \
+            -scheme InsulinOCR \
+            -configuration Debug \
+            -destination "platform=iOS Simulator,id=${SIMULATOR_UDID}" \
+            -derivedDataPath build/DerivedData \
+            -resultBundlePath build/InsulinOCRTests.xcresult \
+            -parallel-testing-enabled NO \
+            CODE_SIGN_IDENTITY=- CODE_SIGNING_ALLOWED=YES CODE_SIGN_STYLE=Manual \
+            PROVISIONING_PROFILE_SPECIFIER=
+
+      - name: Verify UI-produced QA archive
+        run: python3 Scripts/verify_ui_archive.py --udid "${SIMULATOR_UDID}"
+
+      - name: Collect own app diagnostics on failure
+        if: failure() && env.SIMULATOR_UDID != ''
+        run: |
+          xcrun simctl spawn "${SIMULATOR_UDID}" log show --last 15m --style compact \
+            --predicate 'process CONTAINS "InsulinOCR" OR eventMessage CONTAINS "org.example.insulinocr"' \
+            > build/ui-extension-system.log 2>&1 || true
+
+      - name: Retain synthetic test failure evidence
+        if: failure()
+        uses: actions/upload-artifact@cf430e030ddbb5b0abf93d22962f4752f3646cd9 # v7.0.2
+        with:
+          name: simulator-failure-evidence
+          path: |
+            build/InsulinOCRTests.xcresult
+            build/share-host-preparation.log
+            build/ui-extension-system.log
+          retention-days: 7
+          if-no-files-found: warn

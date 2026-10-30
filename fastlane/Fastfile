@@ -1,0 +1,154 @@
+require "base64"
+require_relative "lib/insulinocr_credentials"
+require_relative "lib/insulinocr_build_configuration"
+
+default_platform(:ios)
+
+# Fastlane evaluates lane blocks in fastlane/, while individual actions may
+# change directories. Resolve paths once so shell helpers and actions agree.
+PROJECT_ROOT = File.expand_path("..", FastlaneCore::FastlaneFolder.path)
+PROJECT = File.join(PROJECT_ROOT, "InsulinOCR.xcodeproj")
+SCHEME = "InsulinOCR"
+def configured_app_identifier
+  ENV.fetch("APP_IDENTIFIER")
+end
+
+def configured_app_identifiers
+  [configured_app_identifier, "#{configured_app_identifier}.share"]
+end
+
+def prepare_signing
+  InsulinOCRBuildConfiguration.prepare(PROJECT_ROOT, signing: true)
+  generate_project
+end
+TESTFLIGHT_GROUP = "InsulinOCR Internal"
+
+def app_store_connect_key
+  options = begin
+    InsulinOCRCredentials.apple_api_key_options(ENV)
+  rescue ArgumentError => error
+    UI.user_error!(error.message)
+  end
+  app_store_connect_api_key(**options)
+end
+
+def generate_project
+  ENV["APPLE_TEAM_ID"] ||= ENV.fetch("TEAMID", "SIMULATOR1")
+  sh("xcodegen", "generate", "--spec", File.join(PROJECT_ROOT, "project.yml"))
+end
+
+def read_only_signing_preflight
+  ensure_env_vars(env_vars: %w[MATCH_PASSWORD])
+  key = app_store_connect_key
+  setup_ci if ENV["CI"] == "true"
+  sync_code_signing(
+    type: "appstore",
+    app_identifier: configured_app_identifiers,
+    team_id: ENV.fetch("APPLE_TEAM_ID"),
+    api_key: key,
+    git_url: ENV.fetch("MATCH_GIT_URL"),
+    git_branch: "main",
+    readonly: true
+  )
+  key
+end
+
+platform :ios do
+  desc "Generate the project and execute core, integration, and UI tests on Simulator"
+  lane :test do
+    InsulinOCRBuildConfiguration.prepare(PROJECT_ROOT, signing: false)
+    generate_project
+    sh("swift", "test", "--package-path", File.join(PROJECT_ROOT, "Packages/InsulinOCRCore"))
+    sh("python3", "-m", "unittest", "discover", "-s", File.join(PROJECT_ROOT, "Scripts"), "-p", "test_*.py", "-v")
+    helper = File.join(PROJECT_ROOT, "Scripts/prepare_ui_test_host.py")
+    arguments = ["python3", helper, "--device", ENV.fetch("SIMULATOR_DEVICE", "iPhone 17 Pro")]
+    arguments += ["--os", ENV.fetch("SIMULATOR_OS")] if ENV["SIMULATOR_OS"]
+    arguments += ["--udid", ENV.fetch("SIMULATOR_UDID")] if ENV["SIMULATOR_UDID"]
+    preparation = sh(*arguments)
+    simulator_id = preparation.lines.grep(/\ASIMULATOR_UDID=/).last&.split("=", 2)&.last&.strip
+    UI.user_error!("The screenshot share host did not report its simulator") unless simulator_id&.match?(/\A[0-9A-Fa-f-]{36}\z/)
+
+    scan(
+      project: PROJECT,
+      scheme: SCHEME,
+      clean: true,
+      destination: "platform=iOS Simulator,id=#{simulator_id}",
+      parallel_testing: false,
+      code_coverage: true,
+      derived_data_path: File.join(PROJECT_ROOT, "build/DerivedData"),
+      output_directory: File.join(PROJECT_ROOT, "build/test_output"),
+      result_bundle: true,
+      xcargs: "CODE_SIGN_IDENTITY=- CODE_SIGNING_ALLOWED=YES CODE_SIGN_STYLE=Manual PROVISIONING_PROFILE_SPECIFIER="
+    )
+    sh("python3", File.join(PROJECT_ROOT, "Scripts/verify_ui_archive.py"), "--udid", simulator_id)
+  end
+
+  desc "Create or renew development and App Store profiles in the encrypted Match repository"
+  lane :setup_signing do
+    UI.user_error!("setup_signing may not run in CI") if ENV["CI"] == "true"
+    ensure_env_vars(env_vars: %w[MATCH_PASSWORD])
+
+    prepare_signing
+    key = app_store_connect_key
+    %w[development appstore].each do |profile_type|
+      sync_code_signing(
+        type: profile_type,
+        app_identifier: configured_app_identifiers,
+        api_key: key,
+        team_id: ENV.fetch("APPLE_TEAM_ID"),
+        git_url: ENV.fetch("MATCH_GIT_URL"),
+        git_branch: "main",
+        readonly: false
+      )
+    end
+  end
+
+  desc "Verify existing signing access and encrypted profiles without uploading"
+  lane :signing_preflight do
+    prepare_signing
+    read_only_signing_preflight
+  end
+
+  desc "Build and upload an internal TestFlight build"
+  lane :beta do |options|
+    test unless options[:tests_completed] == true && ENV["CI"] == "true"
+    prepare_signing
+    key = read_only_signing_preflight
+
+    next_build_number = latest_testflight_build_number(
+      api_key: key,
+      app_identifier: configured_app_identifier,
+      initial_build_number: 0
+    ) + 1
+
+    increment_build_number(
+      build_number: next_build_number,
+      xcodeproj: PROJECT
+    )
+
+    build_app(
+      project: PROJECT,
+      scheme: SCHEME,
+      clean: true,
+      export_method: "app-store",
+      output_directory: File.join(PROJECT_ROOT, "build"),
+      output_name: "InsulinOCR.ipa",
+      include_symbols: true,
+      export_options: {
+        method: "app-store",
+        signingStyle: "manual",
+        teamID: ENV.fetch("APPLE_TEAM_ID"),
+        provisioningProfiles: configured_app_identifiers.to_h { |identifier| [identifier, "match AppStore #{identifier}"] }
+      }
+    )
+
+    upload_to_testflight(
+      api_key: key,
+      app_identifier: configured_app_identifier,
+      changelog: options[:release_notes] || ENV.fetch("RELEASE_NOTES", "Internaler InsulinOCR-Testbuild"),
+      groups: [TESTFLIGHT_GROUP],
+      distribute_external: false,
+      skip_waiting_for_build_processing: false
+    )
+  end
+end

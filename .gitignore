@@ -1,0 +1,73 @@
+# Xcode / XcodeGen
+InsulinOCR.xcodeproj/
+*.xcworkspace/xcuserdata/
+*.xcodeproj/xcuserdata/
+*.xcuserstate
+DerivedData/
+build/
+*.xcresult
+*.ipa
+*.dSYM
+*.dSYM.zip
+
+# Swift Package Manager
+.build/
+.swiftpm/xcode/package.xcworkspace/xcuserdata/
+Packages/**/.build/
+
+# Ruby / fastlane
+.bundle/
+vendor/bundle/
+fastlane/report.xml
+fastlane/Preview.html
+fastlane/screenshots/
+fastlane/test_output/
+
+# Credentials and signing material
+.env
+.env.*
+!.env.example
+*.p8
+*.p12
+*.cer
+*.mobileprovision
+*.provisionprofile
+*.key
+*.pem
+
+# Personal health data and generated QA material
+PrivateFixtures/
+LocalFixtures/
+QA/Real/
+CaseArchives/
+Exports/
+*.casearchive.zip
+*.camaps.png
+*.camaps.jpg
+*.camaps.jpeg
+
+# macOS / editors
+__pycache__/
+*.pyc
+.DS_Store
+*.swp
+*.swo
+.idea/
+.vscode/
+
+
+# Extra publication guardrails for local keys and personal screenshots
+*.p8.*
+AuthKey_*
+API_AuthKey_*
+IMG_*.png
+IMG_*.PNG
+IMG_*.jpg
+IMG_*.JPG
+IMG_*.jpeg
+Bildschirmfoto*.png
+Screenshot*.png
+
+# Private deployment configuration, generated only for signing
+Config/Local.generated.xcconfig
+*.build-config.json

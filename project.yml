@@ -1,0 +1,256 @@
+name: InsulinOCR
+
+options:
+  bundleIdPrefix: org.example
+  createIntermediateGroups: true
+  developmentLanguage: de
+  minimumXcodeGenVersion: 2.42.0
+  xcodeVersion: "27.1"
+  deploymentTarget:
+    iOS: "18.0"
+
+configs:
+  Debug: debug
+  Release: release
+
+configFiles:
+  Debug: Config/Debug.xcconfig
+  Release: Config/Release.xcconfig
+
+packages:
+  InsulinOCRCore:
+    path: Packages/InsulinOCRCore
+  ZIPFoundation:
+    url: https://github.com/weichsel/ZIPFoundation.git
+    exactVersion: 0.9.20
+
+settings:
+  base:
+    DEVELOPMENT_TEAM: $(APPLE_TEAM_ID)
+    IPHONEOS_DEPLOYMENT_TARGET: "18.0"
+    SWIFT_VERSION: "6.0"
+    SWIFT_STRICT_CONCURRENCY: complete
+    SWIFT_UPCOMING_FEATURE_EXISTENTIAL_ANY: YES
+    TARGETED_DEVICE_FAMILY: "1"
+    SUPPORTS_MACCATALYST: NO
+    CLANG_ANALYZER_LOCALIZABILITY_NONLOCALIZED: YES
+
+targets:
+  InsulinOCR:
+    type: application
+    platform: iOS
+    deploymentTarget: "18.0"
+    sources:
+      - path: Shared
+      - path: InsulinOCR
+        excludes:
+          - "**/*.entitlements"
+    dependencies:
+      - package: InsulinOCRCore
+        product: InsulinOCRCore
+      - package: ZIPFoundation
+        product: ZIPFoundation
+      - target: InsulinOCRShareExtension
+        embed: true
+    configFiles:
+      Debug: Config/Debug.xcconfig
+      Release: Config/Release.xcconfig
+    entitlements:
+      path: InsulinOCR/InsulinOCR.entitlements
+      properties:
+        aps-environment: $(APS_ENVIRONMENT)
+        com.apple.developer.default-data-protection: NSFileProtectionComplete
+        com.apple.developer.icloud-container-identifiers:
+          - $(INSULINOCR_CLOUDKIT_CONTAINER)
+        com.apple.developer.icloud-services:
+          - CloudKit
+        com.apple.developer.icloud-container-environment: $(ICLOUD_ENVIRONMENT)
+        com.apple.developer.ubiquity-kvstore-identifier: $(TeamIdentifierPrefix)$(INSULINOCR_APP_IDENTIFIER)
+        com.apple.security.application-groups:
+          - $(INSULINOCR_APP_GROUP)
+    info:
+      path: Config/InsulinOCR-Info.plist
+      properties:
+        CFBundleDisplayName: InsulinOCR
+        InsulinOCRAppGroup: $(INSULINOCR_APP_GROUP)
+        InsulinOCRCloudKitContainer: $(INSULINOCR_CLOUDKIT_CONTAINER)
+        CFBundleShortVersionString: $(MARKETING_VERSION)
+        CFBundleVersion: $(CURRENT_PROJECT_VERSION)
+        ITSAppUsesNonExemptEncryption: false
+        LSApplicationCategoryType: public.app-category.healthcare-fitness
+        NSPhotoLibraryUsageDescription: InsulinOCR benötigt Zugriff auf den ausgewählten CamAPS-FX-Screenshot, um Therapiedaten lokal zu analysieren.
+        UIBackgroundModes:
+          - remote-notification
+        UILaunchScreen: {}
+        UISupportedInterfaceOrientations:
+          - UIInterfaceOrientationPortrait
+          - UIInterfaceOrientationLandscapeLeft
+          - UIInterfaceOrientationLandscapeRight
+        UISupportedInterfaceOrientations~ipad:
+          - UIInterfaceOrientationPortrait
+          - UIInterfaceOrientationPortraitUpsideDown
+          - UIInterfaceOrientationLandscapeLeft
+          - UIInterfaceOrientationLandscapeRight
+    settings:
+      base:
+        PRODUCT_BUNDLE_IDENTIFIER: $(INSULINOCR_APP_IDENTIFIER)
+        PRODUCT_NAME: InsulinOCR
+        ASSETCATALOG_COMPILER_APPICON_NAME: AppIcon
+        ASSETCATALOG_COMPILER_GLOBAL_ACCENT_COLOR_NAME: AccentColor
+        CODE_SIGN_ENTITLEMENTS: InsulinOCR/InsulinOCR.entitlements
+        CURRENT_PROJECT_VERSION: "1"
+        MARKETING_VERSION: 0.1.0
+        GENERATE_INFOPLIST_FILE: NO
+        INFOPLIST_FILE: Config/InsulinOCR-Info.plist
+        ENABLE_USER_SCRIPT_SANDBOXING: YES
+      configs:
+        Release:
+          CODE_SIGN_IDENTITY: Apple Distribution
+
+  InsulinOCRShareExtension:
+    type: app-extension
+    platform: iOS
+    deploymentTarget: "18.0"
+    sources:
+      - path: Shared
+      - path: ShareExtension
+        excludes:
+          - "**/*.entitlements"
+          - Info.plist
+    dependencies:
+      - package: InsulinOCRCore
+        product: InsulinOCRCore
+    configFiles:
+      Debug: Config/Debug.xcconfig
+      Release: Config/Release.xcconfig
+    entitlements:
+      path: ShareExtension/InsulinOCRShareExtension.entitlements
+      properties:
+        com.apple.developer.default-data-protection: NSFileProtectionComplete
+        com.apple.security.application-groups:
+          - $(INSULINOCR_APP_GROUP)
+    info:
+      path: Config/InsulinOCRShareExtension-Info.plist
+      properties:
+        CFBundleDisplayName: An InsulinOCR senden
+        InsulinOCRAppGroup: $(INSULINOCR_APP_GROUP)
+        CFBundleShortVersionString: $(MARKETING_VERSION)
+        CFBundleVersion: $(CURRENT_PROJECT_VERSION)
+        NSExtension:
+          NSExtensionPointIdentifier: com.apple.share-services
+          NSExtensionPrincipalClass: $(PRODUCT_MODULE_NAME).ShareViewController
+          NSExtensionAttributes:
+            NSExtensionActivationRule:
+              NSExtensionActivationSupportsImageWithMaxCount: 1
+    settings:
+      base:
+        PRODUCT_BUNDLE_IDENTIFIER: $(INSULINOCR_APP_IDENTIFIER).share
+        PRODUCT_NAME: InsulinOCRShareExtension
+        CODE_SIGN_ENTITLEMENTS: ShareExtension/InsulinOCRShareExtension.entitlements
+        CURRENT_PROJECT_VERSION: "1"
+        MARKETING_VERSION: 0.1.0
+        GENERATE_INFOPLIST_FILE: NO
+        INFOPLIST_FILE: Config/InsulinOCRShareExtension-Info.plist
+        APPLICATION_EXTENSION_API_ONLY: YES
+      configs:
+        Release:
+          CODE_SIGN_IDENTITY: Apple Distribution
+        SKIP_INSTALL: YES
+        ENABLE_USER_SCRIPT_SANDBOXING: YES
+
+  InsulinOCRTests:
+    type: bundle.unit-test
+    platform: iOS
+    deploymentTarget: "18.0"
+    sources:
+      - path: InsulinOCRTests
+    dependencies:
+      - target: InsulinOCR
+      - package: InsulinOCRCore
+        product: InsulinOCRCore
+    settings:
+      base:
+        PRODUCT_BUNDLE_IDENTIFIER: $(INSULINOCR_APP_IDENTIFIER).tests
+        GENERATE_INFOPLIST_FILE: YES
+        TEST_HOST: $(BUILT_PRODUCTS_DIR)/InsulinOCR.app/$(BUNDLE_EXECUTABLE_FOLDER_PATH)/InsulinOCR
+        BUNDLE_LOADER: $(TEST_HOST)
+
+  InsulinOCRIntegrationTests:
+    type: bundle.unit-test
+    platform: iOS
+    deploymentTarget: "18.0"
+    sources:
+      - path: InsulinOCRIntegrationTests
+    dependencies:
+      - target: InsulinOCR
+      - package: InsulinOCRCore
+        product: InsulinOCRCore
+      - package: ZIPFoundation
+        product: ZIPFoundation
+    settings:
+      base:
+        PRODUCT_BUNDLE_IDENTIFIER: $(INSULINOCR_APP_IDENTIFIER).integration-tests
+        GENERATE_INFOPLIST_FILE: YES
+        TEST_HOST: $(BUILT_PRODUCTS_DIR)/InsulinOCR.app/$(BUNDLE_EXECUTABLE_FOLDER_PATH)/InsulinOCR
+        BUNDLE_LOADER: $(TEST_HOST)
+
+  InsulinOCRShareTestHost:
+    type: application
+    platform: iOS
+    deploymentTarget: "18.0"
+    sources:
+      - path: UITestShareHost
+      - path: InsulinOCRUITests/Fixtures
+        type: folder
+    settings:
+      base:
+        PRODUCT_BUNDLE_IDENTIFIER: $(INSULINOCR_APP_IDENTIFIER).test-share-host
+        PRODUCT_NAME: InsulinOCRShareTestHost
+        SUPPORTED_PLATFORMS: iphonesimulator
+        GENERATE_INFOPLIST_FILE: YES
+        INFOPLIST_KEY_CFBundleDisplayName: Synthetic Share Host
+        INFOPLIST_KEY_UILaunchScreen_Generation: YES
+
+  InsulinOCRUITests:
+    type: bundle.ui-testing
+    platform: iOS
+    deploymentTarget: "18.0"
+    sources:
+      - path: InsulinOCRUITests
+    dependencies:
+      - target: InsulinOCR
+    settings:
+      base:
+        PRODUCT_BUNDLE_IDENTIFIER: $(INSULINOCR_APP_IDENTIFIER).ui-tests
+        GENERATE_INFOPLIST_FILE: YES
+        TEST_TARGET_NAME: InsulinOCR
+
+schemes:
+  InsulinOCRShareTestHost:
+    build:
+      targets:
+        InsulinOCRShareTestHost: [run, test]
+    run:
+      config: Debug
+  InsulinOCR:
+    build:
+      targets:
+        InsulinOCR: all
+        InsulinOCRShareExtension: all
+        InsulinOCRTests: [test]
+        InsulinOCRIntegrationTests: [test]
+        InsulinOCRUITests: [test]
+    run:
+      config: Debug
+    test:
+      config: Debug
+      gatherCoverageData: true
+      targets:
+        - name: InsulinOCRTests
+          parallelizable: true
+        - name: InsulinOCRIntegrationTests
+          parallelizable: false
+        - name: InsulinOCRUITests
+          parallelizable: false
+    archive:
+      config: Release
