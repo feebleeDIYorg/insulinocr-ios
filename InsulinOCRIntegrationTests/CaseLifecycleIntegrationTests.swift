@@ -378,5 +378,5 @@ final class CaseLifecycleIntegrationTests: XCTestCase {
     }
 
     private static let bolusID = UUID(uuidString: "10000000-0000-0000-0000-000000000001")!
-    private static let onePixelPNG = "iVBORw0KGgoAAAANSUhEUgAAAAEAAAABCAQAAAC1HAwCAAAAC0lEQVR42mP8/x8AAusB9WlM8WQAAAAASUVORK5CYII="
+    private static let onePixelPNG = "iVBORw0KGgoAAAANSUhEUgAAAAEAAAABCAYAAAAfFcSJAAAAC0lEQVR4nGP4DwQACfsD/fteaysAAAAASUVORK5CYII="
 }

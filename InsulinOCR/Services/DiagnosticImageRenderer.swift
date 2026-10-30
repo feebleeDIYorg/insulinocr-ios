@@ -62,13 +62,13 @@ actor DiagnosticImageRenderer {
 
         if let result {
             stroke(
-            result.layout.plotFrame,
-            color: CGColor(red: 0.1, green: 0.75, blue: 0.25, alpha: 0.95),
-            width: 4,
-            context: context,
-            imageWidth: width,
-            imageHeight: height
-        )
+                result.layout.plotFrame,
+                color: CGColor(red: 0.1, green: 0.75, blue: 0.25, alpha: 0.95),
+                width: 4,
+                context: context,
+                imageWidth: width,
+                imageHeight: height
+            )
         }
 
         for observation in observations {
@@ -124,13 +124,13 @@ actor DiagnosticImageRenderer {
         }
 
         if let result {
-        drawBasalPath(
-            result.basalSteps,
-            result: result,
-            context: context,
-            imageWidth: width,
-            imageHeight: height
-        )
+            drawBasalPath(
+                result.basalSteps,
+                result: result,
+                context: context,
+                imageWidth: width,
+                imageHeight: height
+            )
         }
 
         guard let rendered = context.makeImage(),
