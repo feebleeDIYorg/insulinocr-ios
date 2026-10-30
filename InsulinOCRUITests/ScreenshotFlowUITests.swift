@@ -29,7 +29,7 @@ final class ScreenshotFlowUITests: XCTestCase {
         XCTAssertTrue(destination.waitForExistence(timeout: 8), host.debugDescription)
         // The system share cell changes its padding between iOS versions.
         // Select its actual image instead of estimating a point in that cell.
-        let namedActivityImage = destination.images["activityImageView"]
+        let namedActivityImage = destination.images.matching(identifier: "activityImageView").firstMatch
         let activityImage = namedActivityImage.exists ? namedActivityImage : destination.images.firstMatch
         XCTAssertTrue(activityImage.waitForExistence(timeout: 5), host.debugDescription)
         activityImage.tap()

@@ -69,6 +69,9 @@ struct CaseDetailView: View {
                 Label(reason, systemImage: "exclamationmark.triangle.fill")
                     .font(.subheadline)
                     .foregroundStyle(.orange)
+                Text("Der Case ist gespeichert, aber IOB und aktive Kohlenhydrate bleiben gesperrt. Prüfe zuerst den Aufnahmezeitpunkt und die Zeitbeschriftungen. Bei fehlenden Basalabschnitten braucht die App einen vollständig sichtbaren Verlauf; eine nicht erkannte Menge lässt sich in „Korrigieren“ prüfen.")
+                    .font(.footnote)
+                    .foregroundStyle(.secondary)
             }
             Text("Der Case bleibt auf diesen Zeitpunkt eingefroren. Späteres Öffnen verändert IOB und COB nicht.")
                 .font(.footnote)
