@@ -1,6 +1,6 @@
 # Therapy model validation
 
-The current core suite contains 60 tests, including native Vision failure-path checks. `TherapyReferenceMatrixTests`
+The current core suite contains 63 tests, including native Vision failure-path checks. `TherapyReferenceMatrixTests`
 adds an independent insulin oracle and broadens the numerical parameter matrix.
 This is numerical model evidence, not clinical validation or OCR acceptance.
 

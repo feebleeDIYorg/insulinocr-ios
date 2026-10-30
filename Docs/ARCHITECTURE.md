@@ -135,3 +135,18 @@ identify the failed envelope by its `failure` field and versioned schema; those
 raw observations include region and ranked candidates. No calibration file is
 invented for an uncalibrated attempt. Older successful envelopes remain readable.
 The CLI additionally writes a local `failed-analysis.json` sidecar on rejection.
+
+## Alternate event-pill recognition
+
+Native analysis 1.9 retries an unknown event quantity using a bounded, threefold
+nearest-neighbour enlargement of a fixed binary luminance image. The original
+crop and all candidates remain intact. `OCRRawTextObservation.preprocessing`
+records the exact versioned preparation; its absence is compatible with older
+cases. Crops exceeding the preparation memory bound skip the alternate pass.
+
+Only complete geometrically isolated stems are retried. Alternate text touching
+the integer crop boundary cannot supply a quantity; rejected observations remain
+available for QA. Accepted candidates join the original evidence and use the same
+quantity parser and confidence threshold. Conflicting recognized quantities stay
+unknown. This does not change basal extraction, clock validation, activity models
+or completeness gates. Real-image/device release acceptance remains separate.

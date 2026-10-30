@@ -13,7 +13,7 @@ public struct NativeAnalysisConfiguration: Sendable, Equatable {
     public let maximumTimeResidualMinutes: Double
 
     public init(
-        algorithmVersion: String = "native-1.8.0",
+        algorithmVersion: String = "native-1.9.0",
         minimumBasalCoverage: Double = 0.99,
         maximumTimeResidualMinutes: Double = 1
     ) {
@@ -259,10 +259,25 @@ public actor NativeAnalysisEngine: AnalysisEngine {
             let evidence = pillObservations + OCRObservationInterpreter.eventTextEvidence(
                 from: rawObservations, for: stem, among: stems
             )
-            let candidates = evidence
+            var candidates = evidence
                 .flatMap(\.candidates)
                 .sorted { $0.confidence > $1.confidence }
-            let parsed = OCRTextParser.amount(from: candidates, expectedKind: stem.kind)
+            var evidenceIDs = evidence.map(\.id)
+            var parsed = OCRTextParser.amount(from: candidates, expectedKind: stem.kind)
+            if parsed.0.value == nil {
+                let enhanced = try recognizeText(in: cgImage, region: stem.pillRect,
+                    kind: .eventPill, minimumTextHeight: 0.02, enhancePill: true)
+                rawObservations += enhanced
+                latestObservations = rawObservations
+                let usable = enhanced.filter {
+                    Self.isUnclippedPillText($0.boundingBox, in: stem.pillRect,
+                        imageWidth: cgImage.width, imageHeight: cgImage.height)
+                }
+                candidates += usable.flatMap(\.candidates)
+                candidates.sort { $0.confidence > $1.confidence }
+                evidenceIDs += usable.map(\.id)
+                parsed = OCRTextParser.amount(from: candidates, expectedKind: stem.kind)
+            }
             therapyEvents.append(
                 OCRTherapyEvent(
                     kind: parsed.1,
@@ -275,7 +290,7 @@ public actor NativeAnalysisEngine: AnalysisEngine {
                     confidence: min(stem.confidence, parsed.2 == 0 ? stem.confidence * 0.65 : parsed.2),
                     provenance: OCRProvenance(
                         kind: .visionText,
-                        sourceObservationIDs: evidence.map(\.id),
+                        sourceObservationIDs: evidenceIDs,
                         note: parsed.0.value == nil
                             ? "Complete event stem found geometrically; no safe amount was recognized."
                             : nil
@@ -420,7 +435,8 @@ public actor NativeAnalysisEngine: AnalysisEngine {
         in image: CGImage,
         region: OCRNormalizedRect,
         kind: OCRRegionKind,
-        minimumTextHeight: Float
+        minimumTextHeight: Float,
+        enhancePill: Bool = false
     ) throws -> [OCRRawTextObservation] {
         let topOriginRegion = region.clampedToUnitSquare()
         let request = VNRecognizeTextRequest()
@@ -452,7 +468,14 @@ public actor NativeAnalysisEngine: AnalysisEngine {
             width: cropRect.width / Double(image.width),
             height: cropRect.height / Double(image.height)
         )
-        let handler = VNImageRequestHandler(cgImage: cropped, orientation: .up, options: [:])
+        let recognitionImage: CGImage
+        if enhancePill {
+            guard let prepared = Self.highContrastPillImage(from: cropped) else { return [] }
+            recognitionImage = prepared
+        } else {
+            recognitionImage = cropped
+        }
+        let handler = VNImageRequestHandler(cgImage: recognitionImage, orientation: .up, options: [:])
         try handler.perform([request])
         let results = request.results ?? []
         return results.map { observation in
@@ -474,7 +497,8 @@ public actor NativeAnalysisEngine: AnalysisEngine {
                 boundingBox: topOrigin,
                 candidates: observation.topCandidates(5).map {
                     OCRTextCandidate(text: $0.string, confidence: Double($0.confidence))
-                }
+                },
+                preprocessing: enhancePill ? "binary-luma-0.7-nearest-3x/v1" : nil
             )
         }
     }
