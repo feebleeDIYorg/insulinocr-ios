@@ -190,7 +190,7 @@ actor AppGroupImportQueue: ImportQueue {
 extension JSONEncoder {
     static var insulinOCR: JSONEncoder {
         let encoder = JSONEncoder()
-        encoder.dateEncodingStrategy = .iso8601
+        encoder.dateEncodingStrategy = .custom { try PreciseISO8601DateCoding.encode($0, to: $1) }
         encoder.outputFormatting = [.prettyPrinted, .sortedKeys, .withoutEscapingSlashes]
         return encoder
     }
@@ -199,7 +199,7 @@ extension JSONEncoder {
 extension JSONDecoder {
     static var insulinOCR: JSONDecoder {
         let decoder = JSONDecoder()
-        decoder.dateDecodingStrategy = .iso8601
+        decoder.dateDecodingStrategy = .custom { try PreciseISO8601DateCoding.decode(from: $0) }
         return decoder
     }
 }

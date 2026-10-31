@@ -22,13 +22,14 @@ final class AppModel {
     private(set) var isProcessingImports = false
     private(set) var importNotice: String?
 
-    init(inMemory: Bool = false) {
+    init(inMemory: Bool = false, settingsOverride: AppSettings? = nil,
+         fileStoreOverride: ProtectedCaseFileStore? = nil) {
         if ProcessInfo.processInfo.arguments.contains("-ui-testing-reset"),
            let identifier = Bundle.main.bundleIdentifier {
             UserDefaults.standard.removePersistentDomain(forName: identifier)
         }
-        let settings = AppSettings()
-        let fileStore = ProtectedCaseFileStore()
+        let settings = settingsOverride ?? AppSettings()
+        let fileStore = fileStoreOverride ?? ProtectedCaseFileStore()
         let importQueue = AppGroupImportQueue()
         self.settings = settings
         self.fileStore = fileStore
@@ -341,8 +342,11 @@ final class AppModel {
         revisions: [CorrectionRevision]
     ) throws {
         guard let library else { return }
-        let effectiveData = try reducer.reduce(analysisRun: analysisRun, revisions: revisions)
         let therapySettings = try makeTherapySettings()
+        let window = DateInterval(start: record.captureTime.addingTimeInterval(-Double(therapySettings.diaMinutes) * 60),
+                                  end: record.captureTime)
+        let effectiveData = try reducer.reduce(analysisRun: analysisRun, revisions: revisions,
+                                               basalCoverageWindow: window)
         let result = activityCalculator.calculate(
             data: effectiveData,
             settings: therapySettings,

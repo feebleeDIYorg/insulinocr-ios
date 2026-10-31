@@ -504,10 +504,10 @@ actor CaseArchiveExporter: CaseExporter {
         }.map { observation in
             var values = [
                 observation.id.uuidString,
-                observation.startDate.ISO8601Format(),
+                PreciseISO8601DateCoding.string(from: observation.startDate) ?? "",
             ]
             if includeEndDate {
-                values.append(observation.endDate?.ISO8601Format() ?? "")
+                values.append(observation.endDate.flatMap { PreciseISO8601DateCoding.string(from: $0) } ?? "")
             }
             values += [
                 observation.amount.map { decimal($0) } ?? "",
@@ -569,7 +569,7 @@ actor CaseArchiveExporter: CaseExporter {
                     scenario.name,
                     eventID.uuidString,
                     kind,
-                    date.ISO8601Format(),
+                    PreciseISO8601DateCoding.string(from: date) ?? "",
                     decimal(amount),
                     unit,
                     metricString(scenario.baseline.basalIOB),
@@ -598,8 +598,8 @@ actor CaseArchiveExporter: CaseExporter {
         let rows = data.basalSegments.map {
             [
                 $0.id.uuidString,
-                $0.startDate.ISO8601Format(),
-                $0.endDate.ISO8601Format(),
+                PreciseISO8601DateCoding.string(from: $0.startDate) ?? "",
+                PreciseISO8601DateCoding.string(from: $0.endDate) ?? "",
                 decimal($0.unitsPerHour),
                 $0.sourceObservationID?.uuidString ?? "",
             ].map(csv).joined(separator: ",")
@@ -611,7 +611,7 @@ actor CaseArchiveExporter: CaseExporter {
         let rows = data.glucoseSamples.map {
             [
                 $0.id.uuidString,
-                $0.date.ISO8601Format(),
+                PreciseISO8601DateCoding.string(from: $0.date) ?? "",
                 decimal($0.value),
                 $0.unit.rawValue,
                 $0.sourceObservationID?.uuidString ?? "",
@@ -624,7 +624,7 @@ actor CaseArchiveExporter: CaseExporter {
         let rows = data.boluses.map {
             [
                 $0.id.uuidString,
-                $0.date.ISO8601Format(),
+                PreciseISO8601DateCoding.string(from: $0.date) ?? "",
                 decimal($0.units),
                 $0.sourceObservationID?.uuidString ?? "",
             ].map(csv).joined(separator: ",")
@@ -636,7 +636,7 @@ actor CaseArchiveExporter: CaseExporter {
         let rows = data.carbohydrates.map {
             [
                 $0.id.uuidString,
-                $0.date.ISO8601Format(),
+                PreciseISO8601DateCoding.string(from: $0.date) ?? "",
                 decimal($0.grams),
                 $0.sourceObservationID?.uuidString ?? "",
             ].map(csv).joined(separator: ",")
@@ -655,7 +655,7 @@ actor CaseArchiveExporter: CaseExporter {
             return [
                 observation.id.uuidString,
                 observation.kind.rawValue,
-                observation.startDate.ISO8601Format(),
+                PreciseISO8601DateCoding.string(from: observation.startDate) ?? "",
                 observation.amountState.rawValue,
                 observation.amount.map { decimal($0) } ?? "",
                 observation.unit.rawValue,

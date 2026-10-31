@@ -79,3 +79,14 @@ data, provenance and unresolved issues remain unchanged; existing stored runs
 are not rewritten. Two regression cases compare the whole forecast with an
 independently prepared past-only history, including a basal interval crossing
 the capture time. The numerical kernels and completeness thresholds are unchanged.
+
+## Explicit basal review
+
+Model policy `openaps-exponential+loopkit-cob/1.2.2` allows a raw basal coverage
+warning to be resolved in effective data only after an explicit basal correction
+and strict continuous, nonoverlapping coverage of the actual computation DIA
+window. Invalid/unknown basal observations and invalid time/basal axes prevent
+resolution. Other critical issues and screenshot-history requirements remain
+unchanged. Original analysis flags and historical runs are preserved. The legacy
+reducer API without a review window remains conservative. No rate is inferred
+from a gap; new UI drafts contain exact boundaries and an empty amount field.

@@ -7,6 +7,17 @@ public struct DefaultEffectiveDataReducer: EffectiveDataReducer {
         analysisRun: AnalysisRun,
         revisions: [CorrectionRevision]
     ) throws -> EffectiveTherapyData {
+        try reduceImpl(analysisRun: analysisRun, revisions: revisions, window: nil)
+    }
+
+    public func reduce(analysisRun: AnalysisRun, revisions: [CorrectionRevision],
+                       basalCoverageWindow: DateInterval) throws -> EffectiveTherapyData {
+        try reduceImpl(analysisRun: analysisRun, revisions: revisions, window: basalCoverageWindow)
+    }
+
+    private func reduceImpl(analysisRun: AnalysisRun, revisions: [CorrectionRevision],
+                            window: DateInterval?) throws -> EffectiveTherapyData {
+        var explicitlyReviewedBasal = false
         var observations = Dictionary(uniqueKeysWithValues: analysisRun.observations.map { ($0.id, $0) })
         let applicableRevisions = revisions.sorted {
             if $0.createdAt == $1.createdAt {
@@ -22,13 +33,19 @@ public struct DefaultEffectiveDataReducer: EffectiveDataReducer {
             for operation in revision.operations {
                 switch operation {
                 case .add(let observation):
+                    explicitlyReviewedBasal = explicitlyReviewedBasal
+                        || (observation.kind == .basalRate && observation.provenance == .userCorrection)
                     observations[observation.id] = observation
                 case .update(let targetID, let replacement):
                     guard observations[targetID] != nil, replacement.id == targetID else {
                         throw EffectiveDataError.invalidCorrectionTarget(targetID)
                     }
+                    explicitlyReviewedBasal = explicitlyReviewedBasal
+                        || (replacement.provenance == .userCorrection
+                            && (replacement.kind == .basalRate || observations[targetID]?.kind == .basalRate))
                     observations[targetID] = replacement
                 case .delete(let targetID):
+                    explicitlyReviewedBasal = explicitlyReviewedBasal || observations[targetID]?.kind == .basalRate
                     guard observations.removeValue(forKey: targetID) != nil else {
                         throw EffectiveDataError.invalidCorrectionTarget(targetID)
                     }
@@ -36,6 +53,7 @@ public struct DefaultEffectiveDataReducer: EffectiveDataReducer {
             }
         }
 
+        var invalidBasalObservation = false
         var basalSegments: [BasalSegment] = []
         var boluses: [InsulinEvent] = []
         var carbohydrates: [CarbohydrateEvent] = []
@@ -52,6 +70,7 @@ public struct DefaultEffectiveDataReducer: EffectiveDataReducer {
                       observation.unit == .unitsPerHour,
                       let endDate = observation.endDate,
                       endDate > observation.startDate else {
+                    invalidBasalObservation = true
                     issues.insert(.incompleteBasalPath)
                     continue
                 }
@@ -127,6 +146,13 @@ public struct DefaultEffectiveDataReducer: EffectiveDataReducer {
             case .eventStem:
                 issues.insert(.unclassifiedEvent)
             }
+        }
+
+        if let window, explicitlyReviewedBasal, !invalidBasalObservation,
+           !issues.contains(.invalidTimeAxis), !issues.contains(.invalidBasalAxis),
+           BasalCoverageValidator.isComplete(basalSegments, in: window) {
+            // Resolve only the effective coverage issue; immutable raw quality stays intact.
+            issues.remove(.incompleteBasalPath)
         }
 
         return EffectiveTherapyData(

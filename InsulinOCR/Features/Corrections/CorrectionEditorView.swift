@@ -74,6 +74,8 @@ struct CorrectionEditorView: View {
                     .font(.footnote)
                     .foregroundStyle(.secondary)
 
+                basalGapReview(analysisRun: analysisRun)
+
                 if let selected = drafts.first(where: { $0.id == selectedObservationID }) {
                     Text("Ausgewählter Datenpunkt").font(.headline)
                     ObservationDraftCard(draft: binding(for: selected), isSelected: true) {}
@@ -123,6 +125,55 @@ struct CorrectionEditorView: View {
             .padding()
         }
         .onChange(of: filter) { visibleLimit = 20 }
+    }
+
+    @ViewBuilder
+    private func basalGapReview(analysisRun: AnalysisRun) -> some View {
+        if !analysisRun.quality.blockers.contains(.invalidTimeAxis),
+           !analysisRun.quality.blockers.contains(.invalidBasalAxis) {
+            let start = max(analysisRun.calibration.timeStart,
+                            record.captureTime.addingTimeInterval(-Double(appModel.settings.diaMinutes) * 60))
+            if start < record.captureTime {
+                let intervals = drafts.compactMap { draft -> DateInterval? in
+                    guard !draft.isDeleted, draft.kind == .basalRate,
+                          let end = draft.endDate, end > draft.startDate else { return nil }
+                    return DateInterval(start: draft.startDate, end: end)
+                }
+                let gaps = BasalGapReview.gaps(intervals: intervals,
+                    in: DateInterval(start: start, end: record.captureTime))
+                if !gaps.isEmpty {
+                    VStack(alignment: .leading, spacing: 10) {
+                        Text("Lücken der Basalhistorie").font(.headline)
+                        Text("Prüfe diese Zeiträume und trage eine dir bekannte Basalrate ein. Die Grenzen werden sekundengenau übernommen; die Rate bleibt zur Eingabe leer.")
+                            .font(.footnote).foregroundStyle(.secondary)
+                        ForEach(Array(gaps.prefix(3).enumerated()), id: \.offset) { item in
+                            VStack(alignment: .leading, spacing: 4) {
+                                Text("Von: \(item.element.start.formatted(.dateTime.day().month().hour().minute().second()))")
+                                Text("Bis: \(item.element.end.formatted(.dateTime.day().month().hour().minute().second()))")
+                                Button("Basalintervall prüfen") { addBasalGap(item.element) }
+                                    .accessibilityIdentifier("correction.reviewBasalGap")
+                                    .disabled(isSaving)
+                            }
+                            .font(.footnote.monospacedDigit())
+                        }
+                        if gaps.count > 3 {
+                            Text("Weitere Zeitlücken werden nach diesen Einträgen angezeigt.").font(.footnote)
+                        }
+                    }
+                    .padding()
+                    .background(.thinMaterial, in: .rect(cornerRadius: 14))
+                }
+            }
+        }
+    }
+
+    private func addBasalGap(_ gap: DateInterval) {
+        var draft = ObservationDraft(newKind: .basalRate, date: gap.end)
+        draft.startDate = gap.start
+        draft.endDate = gap.end
+        drafts.append(draft)
+        selectedObservationID = draft.id
+        filter = .basal
     }
 
     private var filteredDrafts: [ObservationDraft] {
@@ -283,8 +334,8 @@ private struct ObservationDraft: Identifiable, Equatable {
         id = UUID()
         original = nil
         kind = newKind
-        startDate = date
-        endDate = newKind == .basalRate ? date.addingTimeInterval(300) : nil
+        startDate = newKind == .basalRate ? date.addingTimeInterval(-300) : date
+        endDate = newKind == .basalRate ? date : nil
         amountText = ""
         isDeleted = false
     }
