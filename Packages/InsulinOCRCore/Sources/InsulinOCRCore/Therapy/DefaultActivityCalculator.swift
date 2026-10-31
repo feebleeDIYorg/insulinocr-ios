@@ -1,7 +1,7 @@
 import Foundation
 
 public struct DefaultActivityCalculator: ActivityCalculator {
-    public static let modelVersion = "openaps-exponential+loopkit-cob/1.2.0"
+    public static let modelVersion = "openaps-exponential+loopkit-cob/1.2.1"
 
     public init() {}
 
@@ -11,7 +11,22 @@ public struct DefaultActivityCalculator: ActivityCalculator {
         referenceDate: Date,
         forecastStepMinutes: Int = 5
     ) -> ActivityComputation {
-        let current = snapshot(data: data, settings: settings, date: referenceDate)
+        // Forecast only delivered treatments; retain the original case data unchanged.
+        let frozenData = EffectiveTherapyData(
+            basalSegments: data.basalSegments.compactMap { segment in
+                guard segment.startDate < referenceDate else { return nil }
+                return BasalSegment(id: segment.id, startDate: segment.startDate,
+                    endDate: min(segment.endDate, referenceDate), unitsPerHour: segment.unitsPerHour,
+                    sourceObservationID: segment.sourceObservationID)
+            },
+            boluses: data.boluses.filter { $0.date <= referenceDate },
+            carbohydrates: data.carbohydrates.filter { $0.date <= referenceDate },
+            glucoseSamples: data.glucoseSamples,
+            unresolvedIssues: data.unresolvedIssues,
+            sourceAnalysisRunID: data.sourceAnalysisRunID,
+            sourceCorrectionRevisionID: data.sourceCorrectionRevisionID,
+            observedHistoryMinutes: data.observedHistoryMinutes)
+        let current = snapshot(data: frozenData, settings: settings, date: referenceDate)
         let step = max(1, forecastStepMinutes)
         let horizonMinutes = max(
             settings.diaMinutes,
@@ -19,7 +34,7 @@ public struct DefaultActivityCalculator: ActivityCalculator {
         )
         let forecast = stride(from: step, through: horizonMinutes, by: step).map { minute in
             snapshot(
-                data: data,
+                data: frozenData,
                 settings: settings,
                 date: referenceDate.addingTimeInterval(Double(minute) * 60),
                 coverageReferenceDate: referenceDate
