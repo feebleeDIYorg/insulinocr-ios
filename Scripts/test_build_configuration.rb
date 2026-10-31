@@ -28,6 +28,26 @@ class BuildConfigurationTests
     InsulinOCRBuildConfiguration.parse(JSON.generate(value), team)
   end
 
+  def test_explicit_match_branch_and_legacy_default
+    Dir.mktmpdir do |root|
+      Dir.mkdir(File.join(root, "Config"))
+      ["master", "release/signing-v2", nil].each do |branch|
+        value = branch ? config.merge("match_git_branch" => branch) : config
+        assert_equal value, parse(value)
+        env = {"INSULINOCR_BUILD_CONFIG" => JSON.generate(value), "TEAMID" => "SYNTHETIC1", "MATCH_GIT_BRANCH" => "untrusted-stale-value"}
+        InsulinOCRBuildConfiguration.prepare(root, signing: true, env: env)
+        assert_equal(branch || "main", env["MATCH_GIT_BRANCH"])
+        refute File.read(File.join(root, "Config/Local.generated.xcconfig")).include?("signing-v2")
+      end
+    end
+  end
+
+  def test_rejects_unsafe_or_missing_explicit_branch
+    [nil, 1, "", "HEAD", "-master", "feature//signing", "feature/", "../main", "feature/../main", "main.lock", "feature/.hidden", "main.", "main\nOTHER=value", "main;echo unsafe", "a" * 256].each do |branch|
+      assert_raises(ArgumentError) { parse(config.merge("match_git_branch" => branch)) }
+    end
+  end
+
   def test_valid_configuration
     assert_equal config, parse
   end
