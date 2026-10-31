@@ -80,17 +80,20 @@ public struct OCRRawTextObservation: Codable, Sendable, Equatable, Identifiable 
     public let region: OCRRegionKind
     public let boundingBox: OCRNormalizedRect
     public let candidates: [OCRTextCandidate]
+    public let preprocessing: String?
 
     public init(
         id: UUID = UUID(),
         region: OCRRegionKind,
         boundingBox: OCRNormalizedRect,
-        candidates: [OCRTextCandidate]
+        candidates: [OCRTextCandidate],
+        preprocessing: String? = nil
     ) {
         self.id = id
         self.region = region
         self.boundingBox = boundingBox
         self.candidates = candidates
+        self.preprocessing = preprocessing
     }
 
     public var bestCandidate: OCRTextCandidate? {

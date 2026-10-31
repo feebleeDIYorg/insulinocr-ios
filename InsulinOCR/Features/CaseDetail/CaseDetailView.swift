@@ -68,6 +68,15 @@ struct CaseDetailView: View {
                 Spacer()
                 StatusBadge(status: record.status)
             }
+            Text(captureTimeExplanation)
+                .font(.footnote)
+                .foregroundStyle(record.captureTimeSource == .importTime ? Color.orange : Color.secondary)
+                .accessibilityIdentifier("case.captureTimeSource")
+            Button("Aufnahmezeit prüfen", systemImage: "calendar.badge.clock") {
+                presentedSheet = .captureTime
+            }
+            .disabled(record.status == .analyzing)
+            .accessibilityIdentifier("case.captureTimeReview")
             if let reason = record.reviewReason {
                 Label(reason, systemImage: "exclamationmark.triangle.fill")
                     .font(.subheadline)
@@ -82,6 +91,15 @@ struct CaseDetailView: View {
         }
         .padding()
         .background(.thinMaterial, in: .rect(cornerRadius: 16))
+    }
+
+    private var captureTimeExplanation: String {
+        switch record.captureTimeSource {
+        case .imageMetadata: "Zeitquelle: Bildmetadaten. Bitte bei abweichenden Zeitbeschriftungen prüfen."
+        case .fileMetadata: "Zeitquelle: Dateimetadaten. Diese Zeit kann vom tatsächlichen Screenshot-Zeitpunkt abweichen."
+        case .importTime: "Aufnahmezeit unbekannt: Es wird die Importzeit verwendet. Bitte den tatsächlichen Screenshot-Zeitpunkt prüfen."
+        case .userCorrection: "Zeitquelle: von dir bestätigter Aufnahmezeitpunkt."
+        }
     }
 
     private var metrics: some View {
@@ -134,6 +152,7 @@ struct CaseDetailView: View {
             Button("Aufnahmezeit bearbeiten", systemImage: "calendar.badge.clock") {
                 presentedSheet = .captureTime
             }
+            .disabled(record.status == .analyzing)
             Button("Korrigieren", systemImage: "scope") {
                 presentedSheet = .correction
             }
@@ -221,7 +240,7 @@ private struct CaptureTimeEditor: View {
         NavigationStack {
             Form {
                 DatePicker("Aufnahmezeitpunkt", selection: $captureTime)
-                Text("Eine Änderung erzeugt bei der nächsten Berechnung einen neuen versionierten Rechenlauf.")
+                Text("Beim Speichern wird das Originalbild mit diesem Zeitpunkt erneut analysiert. Bei auswertbaren Daten entsteht ein neuer Rechenlauf. Frühere Läufe bleiben erhalten.")
                     .font(.footnote)
                     .foregroundStyle(.secondary)
             }
@@ -242,6 +261,7 @@ private struct CaptureTimeEditor: View {
                             }
                         }
                     }
+                    .disabled(record.status == .analyzing)
                 }
             }
             .alert("Speichern fehlgeschlagen", isPresented: Binding(

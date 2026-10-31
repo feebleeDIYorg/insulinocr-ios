@@ -1,7 +1,8 @@
 # Release and TestFlight runbook
 
 TestFlight delivery is intentionally manual. A release is blocked until every
-item below is satisfied.
+applicable item below is satisfied. The explicitly deferred two-device check
+for the current internal evaluation is described below.
 
 ## One-time Apple and GitHub setup
 
@@ -47,7 +48,10 @@ in CI; only an authorized local bootstrap may update signing material.
 - Release gates for layout rejection, axes, basal, glucose, events, mathematical
   goldens, fail-closed behavior, performance, archive roundtrip, and end-to-end
   import all pass.
-- CloudKit two-device roundtrip and correction-conflict behavior are confirmed.
+- CloudKit two-device roundtrip and correction-conflict behavior remain required
+  for completed synchronization acceptance. The two-device roundtrip is explicitly
+  deferred for the current internal TestFlight evaluation; it has not passed.
+  Synchronization remains off by default. This deferral changes no other gate.
 - CloudKit schema is deployed to production.
 - App, extension, App Group, CloudKit, push, and data-protection entitlements are
   present in the distribution profiles.
