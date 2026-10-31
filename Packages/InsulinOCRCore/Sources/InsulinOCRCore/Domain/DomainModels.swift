@@ -597,6 +597,16 @@ public enum EffectiveDataError: Error, Equatable, Sendable {
 
 public protocol EffectiveDataReducer: Sendable {
     func reduce(analysisRun: AnalysisRun, revisions: [CorrectionRevision]) throws -> EffectiveTherapyData
+    func reduce(analysisRun: AnalysisRun, revisions: [CorrectionRevision],
+                basalCoverageWindow: DateInterval) throws -> EffectiveTherapyData
+}
+
+public extension EffectiveDataReducer {
+    // Existing conformers remain conservative until they implement contextual review.
+    func reduce(analysisRun: AnalysisRun, revisions: [CorrectionRevision],
+                basalCoverageWindow: DateInterval) throws -> EffectiveTherapyData {
+        try reduce(analysisRun: analysisRun, revisions: revisions)
+    }
 }
 
 // MARK: - Computation and simulation

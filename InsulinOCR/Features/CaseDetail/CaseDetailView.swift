@@ -137,6 +137,9 @@ struct CaseDetailView: View {
 
     private var provenanceFooter: some View {
         VStack(alignment: .leading, spacing: 5) {
+            if record.activeCorrectionRevisionID != nil {
+                Label("Manuelle Therapiekorrekturen sind gespeichert.", systemImage: "pencil.circle")
+            }
             Text("Case-ID \(record.id.uuidString)")
             Text("Referenzzeit \((presentation?.referenceTime ?? record.captureTime).ISO8601Format())")
             Text("Experimentelle Schätzung – keine Dosierungsempfehlung")

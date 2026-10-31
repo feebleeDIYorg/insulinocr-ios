@@ -21,7 +21,16 @@ def select_device(devices, name, version=None, identifier=None):
     for runtime, entries in devices.items():
         if not runtime.startswith(prefix):
             continue
-        runtime_version = tuple(int(part) for part in runtime[len(prefix):].split("-"))
+        # Device-specific runtimes append hardware IDs (for example iPhone19-4).
+        # Their digits are not part of the OS version.
+        version_parts = []
+        for part in runtime[len(prefix):].split("-"):
+            if not part.isdecimal():
+                break
+            version_parts.append(int(part))
+        if not version_parts:
+            continue
+        runtime_version = tuple(version_parts)
         for device in entries:
             if not device.get("isAvailable", True):
                 continue

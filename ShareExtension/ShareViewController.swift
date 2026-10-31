@@ -204,7 +204,7 @@ private actor SharedQueueWriter {
         try protect(imageURL)
 
         let encoder = JSONEncoder()
-        encoder.dateEncodingStrategy = .iso8601
+        encoder.dateEncodingStrategy = .custom { try PreciseISO8601DateCoding.encode($0, to: $1) }
         encoder.outputFormatting = [.prettyPrinted, .sortedKeys, .withoutEscapingSlashes]
         let manifestURL = partial.appendingPathComponent("manifest.json")
         try encoder.encode(manifest).write(to: manifestURL, options: [.atomic])

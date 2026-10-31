@@ -157,3 +157,8 @@ domain blocker and no public activity values. Raw CSV dates must be interpreted
 with the enclosing analysis quality; a known quantity does not establish a
 trusted timestamp. Reanalysis keeps older runs and their corrections intact,
 while active corrections/computations are reset until new versions are stored.
+
+Timestamps remain ISO 8601 strings in UTC. New app/extension writers preserve
+up to nine fractional digits in JSON and CSV, so confirmed interval boundaries
+survive storage and reopening. Readers continue to accept older whole-second
+payloads. Immutable historical payload bytes are not rewritten.
