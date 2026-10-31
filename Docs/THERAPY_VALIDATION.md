@@ -68,3 +68,13 @@ Local passing evidence is `build/core-therapy-matrix-tests.log` (ignored).
 CI uses only the committed synthetic vectors. Real-image QA, complete-case
 history checks, target-device performance and TestFlight remain separate gates
 in `ACCEPTANCE_STATUS.md`.
+
+## Frozen forecast input
+
+Model version `openaps-exponential+loopkit-cob/1.2.1` clips basal delivery at the
+frozen reference and excludes later insulin/carbohydrate events from every
+forecast point. Events exactly at the reference remain included. Original case
+data, provenance and unresolved issues remain unchanged; existing stored runs
+are not rewritten. Two regression cases compare the whole forecast with an
+independently prepared past-only history, including a basal interval crossing
+the capture time. The numerical kernels and completeness thresholds are unchanged.
