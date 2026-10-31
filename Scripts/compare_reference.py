@@ -155,6 +155,10 @@ def basal_metrics(steps, reference, start, end):
 def compare(analysis, reference):
     if "layout" not in analysis:
         return {"status": "rejected", "error": analysis.get("error")}
+    if (analysis.get("quality", {}).get("timeAxisClockIsValid") is False
+            or ("timeAxisReferenceDate" in analysis and analysis["timeAxisReferenceDate"] is None)):
+        return {"status": "rejected", "error": "untrustedTimeAxis",
+                "algorithmVersion": analysis.get("algorithmVersion")}
     end = timestamp(analysis["capturedAt"])
     start = end - analysis["layout"]["estimatedVisibleHours"] * 3600
     visible = {key: [row for row in rows if start <= row[0] <= end]

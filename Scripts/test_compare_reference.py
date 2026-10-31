@@ -4,10 +4,33 @@ import random
 import tempfile
 import unittest
 
-from compare_reference import basal_metrics, pair_by_time, pair_events, point_metrics, read_reference, timestamp
+from compare_reference import compare, basal_metrics, pair_by_time, pair_events, point_metrics, read_reference, timestamp
 
 
 class ReferenceComparisonTests(unittest.TestCase):
+    def test_untrusted_clock_cannot_produce_perfect_numeric_qa_metrics(self):
+        captured = "2026-01-15T12:00:00Z"
+        start = "2026-01-15T11:00:00Z"
+        analysis = {"layout": {"estimatedVisibleHours": 1}, "capturedAt": captured,
+                    "status": "complete", "algorithmVersion": "synthetic-test",
+                    "quality": {"timeAxisClockIsValid": True},
+                    "timeAxisReferenceDate": captured,
+                    "glucoseSamples": [{"date": captured, "mmolPerLiter": 5}],
+                    "therapyEvents": [],
+                    "basalSteps": [{"startDate": start, "endDate": captured, "rateUnitsPerHour": 1}]}
+        reference = {"glucose": [(timestamp(captured), 5)], "bolus": [],
+                     "carbohydrates": [], "basal": [(timestamp(start), 1)]}
+        valid = compare(analysis, reference)
+        self.assertEqual(valid["glucose"]["precision"], 1)
+        self.assertEqual(valid["basal"]["timeWeightedMAEUnitsPerHour"], 0)
+        for changes in ({"quality": {"timeAxisClockIsValid": False}},
+                        {"timeAxisReferenceDate": None}):
+            with self.subTest(changes=changes):
+                invalid = compare({**analysis, **changes}, reference)
+                self.assertEqual(invalid["status"], "rejected")
+                self.assertEqual(invalid["error"], "untrustedTimeAxis")
+                self.assertTrue({"glucose", "events", "basal"}.isdisjoint(invalid))
+
     def test_event_matching_agrees_with_exhaustive_small_assignments(self):
         generator = random.Random(17)
         for _ in range(30):
