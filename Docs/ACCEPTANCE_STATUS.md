@@ -12,3 +12,8 @@ Freeze extraction parameters before evaluating a private hold-out.
 Synthetic validation includes the numerical oracle matrix, source completeness,
 real operating-system sharing, correction, reanalysis, simulation, cold reopening
 and an independently verified QA export. See UI_QA.md and THERAPY_VALIDATION.md.
+
+The two-device CloudKit roundtrip is explicitly deferred for the current internal
+TestFlight evaluation and remains unverified. This does not establish completed
+synchronization acceptance or waive any other release gate. Synchronization is
+off by default.
