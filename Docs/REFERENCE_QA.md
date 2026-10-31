@@ -52,3 +52,10 @@ remain separate acceptance requirements. CI tests use synthetic values only.
 OCR clock labels determine graph dates independently of frozen capture. Invalid
 clocks retain raw geometry for private QA but block all activity values. Never
 interpret relative fallback dates as trusted timestamps.
+
+The comparator withholds all numerical error metrics when an analysis explicitly
+marks its clock invalid or stores a null graph-time reference. Otherwise even a
+perfect accidental timestamp match could appear to validate untrusted dates.
+Input hashes remain in CLI reports. Legacy payloads without clock-provenance
+fields retain compatibility; their missing provenance still requires independent
+review before release acceptance.
