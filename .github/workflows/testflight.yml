@@ -4,13 +4,13 @@ on:
   workflow_dispatch:
     inputs:
       mode:
-        description: Read-only signing check or explicitly requested upload
+        description: Read-only check, experimental internal QA upload, or upload after full acceptance
         required: true
         default: preflight
         type: choice
-        options: [preflight, upload]
+        options: [preflight, qa_upload, upload]
       release_gates_confirmed:
-        description: Confirm the documented device, OCR, math, performance and privacy release gates before upload
+        description: For upload mode only, confirm the documented device, OCR, math, performance and privacy release gates
         required: true
         type: boolean
         default: false

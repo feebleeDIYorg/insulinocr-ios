@@ -1,8 +1,10 @@
 # Release and TestFlight runbook
 
-TestFlight delivery is intentionally manual. A release is blocked until every
-applicable item below is satisfied. The explicitly deferred two-device check
-for the current internal evaluation is described below.
+TestFlight delivery is intentionally manual. Full acceptance remains blocked
+until every applicable item below is satisfied. An explicitly selected early
+experimental internal QA build is allowed as described under Upload; it does
+not satisfy or remove the remaining acceptance criteria. The deferred
+two-device check for the current internal evaluation is described below.
 
 ## One-time Apple and GitHub setup
 
@@ -68,9 +70,17 @@ revocation are excluded from the four-stage workflow.
 
 Follow the [four-stage setup](FOUR_STAGE_DELIVERY.md) to validate secrets and
 prepare missing app profiles separately. Then run `testflight` in its default `preflight` mode and approve the protected
-Environment to verify existing signing credentials without uploading. Only after
-all release gates pass, select `upload`, enter concise release notes, and approve
-the Environment again. The workflow:
+Environment to verify existing signing credentials without uploading.
+
+For early device testing and feedback before full OCR/device/performance
+acceptance, explicitly select `qa_upload`, enter generic release notes and approve
+the Environment again. The notes automatically identify the build as experimental,
+the outstanding acceptance and its restriction to QA rather than therapy decisions.
+This does not confirm `release_gates_confirmed` or complete the product acceptance.
+No clinical calculation or incomplete-data safeguard changes in this mode.
+
+After all release gates pass, select `upload`, confirm `release_gates_confirmed`,
+enter concise release notes and approve the Environment again. Both upload modes:
 
 1. verifies the exact Xcode build;
 2. verifies successful package, app, integration and UI CI on the exact main commit;

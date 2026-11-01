@@ -3,10 +3,34 @@ require "time"
 module InsulinOCRSetupPolicy
   LANES = {"validate" => "validate_secrets", "identifiers" => "identifiers",
     "profiles_check" => "check_profiles", "profiles_apply" => "prepare_profiles",
-    "preflight" => "signing_preflight", "upload" => "beta"}.freeze
+    "preflight" => "signing_preflight", "qa_upload" => "beta", "upload" => "beta"}.freeze
+
+  QA_NOTICE = "Experimenteller interner QA-Build. OCR-, Geräte- und Leistungsabnahme sind noch offen. Nur für Tests und Feedback, nicht für Therapieentscheidungen.".freeze
 
   def self.lane(mode)
     LANES.fetch(mode) { raise ArgumentError, "Unsupported delivery operation" }
+  end
+
+  def self.upload_mode?(mode)
+    %w[qa_upload upload].include?(mode)
+  end
+
+  def self.upload_authorized?(env, event)
+    mode = env["INSULINOCR_DELIVERY_MODE"]
+    sha = env["GITHUB_SHA"]
+    repository = env["GITHUB_REPOSITORY"]
+    upload_mode?(mode) && sha.to_s.match?(/\A[a-f0-9]{40}\z/) &&
+      env["INSULINOCR_VERIFIED_CI_HEAD"] == sha &&
+      repository.to_s.match?(%r{\A[A-Za-z0-9_.-]+/[A-Za-z0-9_.-]+\z}) &&
+      env["GITHUB_REF"] == "refs/heads/main" && env["GITHUB_EVENT_NAME"] == "workflow_dispatch" &&
+      env["GITHUB_WORKFLOW_REF"] == "#{repository}/.github/workflows/testflight.yml@refs/heads/main" &&
+      event.is_a?(Hash) && event["inputs"].is_a?(Hash) &&
+      event.dig("inputs", "mode") == mode &&
+      (mode == "qa_upload" || env["INSULINOCR_RELEASE_GATES_CONFIRMED"] == "true")
+  end
+
+  def self.release_notes(mode, notes)
+    mode == "qa_upload" ? "#{QA_NOTICE}\n\n#{notes}" : notes
   end
 
   def self.existing_certificate_id(tree)

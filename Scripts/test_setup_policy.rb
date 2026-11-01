@@ -37,6 +37,32 @@ end
 fake.singleton_class.prepend(InsulinOCRSetupPolicy::ExistingCertificateOnly)
 reject.call { fake.generate_certificate(:synthetic, certificate_id: "synthetic") }
 assert.call(!fake.called); checks += 1
+sha = "a" * 40
+upload = {"INSULINOCR_DELIVERY_MODE" => "qa_upload", "GITHUB_SHA" => sha,
+ "INSULINOCR_VERIFIED_CI_HEAD" => sha, "GITHUB_REPOSITORY" => "synthetic/app",
+ "GITHUB_REF" => "refs/heads/main", "GITHUB_EVENT_NAME" => "workflow_dispatch",
+ "GITHUB_WORKFLOW_REF" => "synthetic/app/.github/workflows/testflight.yml@refs/heads/main",
+ "INSULINOCR_RELEASE_GATES_CONFIRMED" => "false"}
+qa_event = {"inputs" => {"mode" => "qa_upload"}}
+assert.call(InsulinOCRSetupPolicy.upload_authorized?(upload, qa_event)); checks += 1
+assert.call(InsulinOCRSetupPolicy.lane("qa_upload") == "beta"); checks += 1
+[{"GITHUB_REF" => "refs/heads/other"}, {"GITHUB_EVENT_NAME" => "push"},
+ {"GITHUB_WORKFLOW_REF" => "synthetic/app/.github/workflows/ci.yml@refs/heads/main"},
+ {"GITHUB_REPOSITORY" => "other/app"}, {"INSULINOCR_VERIFIED_CI_HEAD" => "b" * 40},
+ {"GITHUB_SHA" => nil, "INSULINOCR_VERIFIED_CI_HEAD" => nil},
+ {"INSULINOCR_DELIVERY_MODE" => "preflight"}].each do |changes|
+ assert.call(!InsulinOCRSetupPolicy.upload_authorized?(upload.merge(changes), qa_event)); checks += 1
+end
+assert.call(!InsulinOCRSetupPolicy.upload_authorized?(upload, {"inputs" => {"mode" => "upload"}})); checks += 1
+[nil, [], {"inputs" => []}].each do |invalid_event|
+ assert.call(!InsulinOCRSetupPolicy.upload_authorized?(upload, invalid_event)); checks += 1
+end
+accepted = upload.merge("INSULINOCR_DELIVERY_MODE" => "upload", "INSULINOCR_RELEASE_GATES_CONFIRMED" => "true")
+accepted_event = {"inputs" => {"mode" => "upload"}}
+assert.call(InsulinOCRSetupPolicy.upload_authorized?(accepted, accepted_event)); checks += 1
+assert.call(!InsulinOCRSetupPolicy.upload_authorized?(accepted.merge("INSULINOCR_RELEASE_GATES_CONFIRMED" => "false"), accepted_event)); checks += 1
+assert.call(InsulinOCRSetupPolicy.release_notes("qa_upload", "Synthetic notes") == "#{InsulinOCRSetupPolicy::QA_NOTICE}\n\nSynthetic notes"); checks += 1
+assert.call(InsulinOCRSetupPolicy.release_notes("upload", "Synthetic notes") == "Synthetic notes"); checks += 1
 require "match"
 Match::Generator.singleton_class.prepend(InsulinOCRSetupPolicy::ExistingCertificateOnly)
 reject.call { Match::Generator.generate_certificate(nil, nil, nil) }; checks += 1
