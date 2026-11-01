@@ -256,7 +256,7 @@ platform :ios do
         skip_submission: assigned,
         build_number: ENV.fetch("INSULINOCR_EXISTING_BUILD_NUMBER"),
         **InsulinOCRSetupPolicy.internal_distribution_options("qa_distribute",
-          ENV.fetch("RELEASE_NOTES", "Interner InsulinOCR-Testbuild")),
+          ENV.fetch("RELEASE_NOTES", "Interner InsulinOCR-Testbuild")).merge(groups: [groups[0].id]),
         skip_waiting_for_build_processing: false)
     end
   end
