@@ -1,5 +1,5 @@
 git_url(ENV.fetch("MATCH_GIT_URL"))
-git_branch("main")
+git_branch(ENV.fetch("MATCH_GIT_BRANCH", "main"))
 storage_mode("git")
 type("appstore")
 app_identifier([ENV.fetch("APP_IDENTIFIER"), "#{ENV.fetch('APP_IDENTIFIER')}.share"])

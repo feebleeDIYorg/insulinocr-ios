@@ -7,7 +7,7 @@ Simulator CI uses no signing credentials and clears generated signing overrides.
 ## Protected TestFlight configuration
 
 Create exactly one Environment secret, `INSULINOCR_BUILD_CONFIG`, in the reviewed
-`testflight` Environment. Its JSON object has exactly these five fields:
+`testflight` Environment. Its JSON object requires these five fields:
 
 ```json
 {
@@ -18,6 +18,15 @@ Create exactly one Environment secret, `INSULINOCR_BUILD_CONFIG`, in the reviewe
   "match_git_url": "https://github.com/your-organization/private-signing.git"
 }
 ```
+
+An optional `match_git_branch` field selects an existing signing branch, for
+example `"master"`. Omitting it preserves the legacy `"main"` default. Both
+Fastlane lanes and Match use this same value. The branch must be a nonempty,
+validated Git branch name; it is never used as an Xcode build setting. Selecting
+a branch does not create or change that branch, certificates or profiles.
+Existing per-app App Store profiles must still be present, and the existing
+password must decrypt the selected store. A repository switch alone does not
+supply missing profiles.
 
 Use the already registered identifiers and existing private signing repository.
 Do not put tokens in the URL. Team identity comes from the existing `TEAMID`

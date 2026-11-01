@@ -49,7 +49,7 @@ def read_only_signing_preflight
       team_id: ENV.fetch("APPLE_TEAM_ID"),
       api_key: key,
       git_url: ENV.fetch("MATCH_GIT_URL"),
-      git_branch: "main",
+      git_branch: ENV.fetch("MATCH_GIT_BRANCH"),
       readonly: true
     )
   end
@@ -100,7 +100,7 @@ platform :ios do
         api_key: key,
         team_id: ENV.fetch("APPLE_TEAM_ID"),
         git_url: ENV.fetch("MATCH_GIT_URL"),
-        git_branch: "main",
+        git_branch: ENV.fetch("MATCH_GIT_BRANCH"),
         readonly: false
       )
     end
