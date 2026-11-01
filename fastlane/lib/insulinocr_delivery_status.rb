@@ -2,8 +2,8 @@ require "json"
 
 # Only these fixed tokens may cross the private signing-log boundary.
 module InsulinOCRDeliveryStatus
-  STAGES = %w[dispatch release_acceptance configuration credentials repository_access project_generation apple_key apple_access identifiers profiles keychain match app_store_build_number archive upload].freeze
-  CODES = %w[in_progress completed dispatch_invalid release_acceptance_required configuration_invalid credentials_invalid repository_access_failed project_generation_failed apple_key_invalid apple_access_failed identifiers_failed profiles_failed keychain_failed match_decryption_failed match_profile_missing match_apple_auth_failed match_failed app_store_build_number_failed archive_failed upload_failed process_failed status_unavailable].freeze
+  STAGES = %w[dispatch release_acceptance configuration credentials repository_access project_generation apple_key apple_access identifiers profiles keychain match app_store_build_number archive upload distribution].freeze
+  CODES = %w[in_progress completed dispatch_invalid release_acceptance_required configuration_invalid credentials_invalid repository_access_failed project_generation_failed apple_key_invalid apple_access_failed identifiers_failed profiles_failed keychain_failed match_decryption_failed match_profile_missing match_apple_auth_failed match_failed app_store_build_number_failed archive_failed upload_failed distribution_failed process_failed status_unavailable].freeze
 
   def self.record(stage, code, env: ENV)
     raise ArgumentError, "Invalid diagnostic token" unless STAGES.include?(stage) && CODES.include?(code)

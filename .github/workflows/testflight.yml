@@ -4,11 +4,16 @@ on:
   workflow_dispatch:
     inputs:
       mode:
-        description: Read-only check, experimental internal QA upload, or upload after full acceptance
+        description: Read-only check, internal QA upload or distribution recovery, or upload after full acceptance
         required: true
         default: preflight
         type: choice
-        options: [preflight, qa_upload, upload]
+        options: [preflight, qa_upload, qa_distribute, upload]
+      existing_build_number:
+        description: For qa_distribute only, the existing build number to finish without another upload
+        required: false
+        default: ""
+        type: string
       release_gates_confirmed:
         description: For upload mode only, confirm the documented device, OCR, math, performance and privacy release gates
         required: true
@@ -104,10 +109,11 @@ jobs:
           FASTLANE_KEY_ID: ${{ secrets.FASTLANE_KEY_ID }}
           FASTLANE_ISSUER_ID: ${{ secrets.FASTLANE_ISSUER_ID }}
           FASTLANE_KEY: ${{ secrets.FASTLANE_KEY }}
-          GH_PAT: ${{ secrets.GH_PAT }}
-          MATCH_PASSWORD: ${{ secrets.MATCH_PASSWORD }}
+          GH_PAT: ${{ inputs.mode != 'qa_distribute' && secrets.GH_PAT || '' }}
+          MATCH_PASSWORD: ${{ inputs.mode != 'qa_distribute' && secrets.MATCH_PASSWORD || '' }}
           MATCH_READONLY: "true"
           INSULINOCR_DELIVERY_MODE: ${{ inputs.mode }}
           INSULINOCR_RELEASE_GATES_CONFIRMED: ${{ inputs.release_gates_confirmed }}
+          INSULINOCR_EXISTING_BUILD_NUMBER: ${{ inputs.existing_build_number }}
           RELEASE_NOTES: ${{ inputs.release_notes }}
         run: bundle exec ruby Scripts/run_testflight.rb

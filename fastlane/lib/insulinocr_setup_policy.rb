@@ -3,7 +3,8 @@ require "time"
 module InsulinOCRSetupPolicy
   LANES = {"validate" => "validate_secrets", "identifiers" => "identifiers",
     "profiles_check" => "check_profiles", "profiles_apply" => "prepare_profiles",
-    "preflight" => "signing_preflight", "qa_upload" => "beta", "upload" => "beta"}.freeze
+    "preflight" => "signing_preflight", "qa_upload" => "beta", "upload" => "beta",
+    "qa_distribute" => "distribute_existing_qa"}.freeze
 
   QA_NOTICE = "Experimenteller interner QA-Build. OCR-, Geräte- und Leistungsabnahme sind noch offen. Nur für Tests und Feedback, nicht für Therapieentscheidungen.".freeze
 
@@ -15,22 +16,35 @@ module InsulinOCRSetupPolicy
     %w[qa_upload upload].include?(mode)
   end
 
-  def self.upload_authorized?(env, event)
+  def self.delivery_mode?(mode)
+    upload_mode?(mode) || mode == "qa_distribute"
+  end
+
+  def self.delivery_authorized?(env, event)
     mode = env["INSULINOCR_DELIVERY_MODE"]
     sha = env["GITHUB_SHA"]
     repository = env["GITHUB_REPOSITORY"]
-    upload_mode?(mode) && sha.to_s.match?(/\A[a-f0-9]{40}\z/) &&
+    delivery_mode?(mode) && sha.to_s.match?(/\A[a-f0-9]{40}\z/) &&
       env["INSULINOCR_VERIFIED_CI_HEAD"] == sha &&
       repository.to_s.match?(%r{\A[A-Za-z0-9_.-]+/[A-Za-z0-9_.-]+\z}) &&
       env["GITHUB_REF"] == "refs/heads/main" && env["GITHUB_EVENT_NAME"] == "workflow_dispatch" &&
       env["GITHUB_WORKFLOW_REF"] == "#{repository}/.github/workflows/testflight.yml@refs/heads/main" &&
       event.is_a?(Hash) && event["inputs"].is_a?(Hash) &&
       event.dig("inputs", "mode") == mode &&
-      (mode == "qa_upload" || env["INSULINOCR_RELEASE_GATES_CONFIRMED"] == "true")
+      (mode != "upload" || env["INSULINOCR_RELEASE_GATES_CONFIRMED"] == "true") &&
+      (mode != "qa_distribute" ||
+        (env["INSULINOCR_EXISTING_BUILD_NUMBER"].to_s.match?(/\A[1-9][0-9]{0,17}\z/) &&
+         event.dig("inputs", "existing_build_number") == env["INSULINOCR_EXISTING_BUILD_NUMBER"]))
   end
 
   def self.release_notes(mode, notes)
-    mode == "qa_upload" ? "#{QA_NOTICE}\n\n#{notes}" : notes
+    %w[qa_upload qa_distribute].include?(mode) ? "#{QA_NOTICE}\n\n#{notes}" : notes
+  end
+
+  def self.internal_distribution_options(mode, notes)
+    {groups: ["InsulinOCR Internal"], distribute_external: false,
+      submit_beta_review: false, notify_external_testers: false,
+      localized_build_info: {"de-DE" => {whats_new: release_notes(mode, notes)}}}
   end
 
   def self.existing_certificate_id(tree)

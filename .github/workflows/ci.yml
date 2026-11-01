@@ -49,6 +49,7 @@ jobs:
           bundle exec ruby Scripts/test_build_configuration.rb
           bundle exec ruby Scripts/test_delivery_status.rb
           bundle exec ruby Scripts/test_delivery_dispatch.rb
+          bundle exec ruby Scripts/test_internal_distribution.rb
           bundle exec ruby Scripts/test_setup_policy.rb
           bundle exec fastlane lanes
           git diff --exit-code -- Gemfile.lock

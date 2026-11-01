@@ -79,6 +79,12 @@ the outstanding acceptance and its restriction to QA rather than therapy decisio
 This does not confirm `release_gates_confirmed` or complete the product acceptance.
 No clinical calculation or incomplete-data safeguard changes in this mode.
 
+If the binary is already valid in App Store Connect but post-upload distribution
+failed, use `qa_distribute` with its `existing_build_number`. This is a separately
+approved protected run for metadata and the internal group, without another
+archive or binary upload. Both internal paths explicitly disable external review
+and create German test notes even when the first build has no localizations.
+
 After all release gates pass, select `upload`, confirm `release_gates_confirmed`,
 enter concise release notes and approve the Environment again. Both upload modes:
 
