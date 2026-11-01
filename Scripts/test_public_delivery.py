@@ -26,6 +26,22 @@ class PublicDeliveryTests(unittest.TestCase):
         self.assertIn('environment: testflight', workflow)
         self.assertIn('workflow_dispatch:', workflow)
 
+    def test_four_stages_keep_setup_explicit_and_secrets_scoped(self):
+        for file in ('validate_secrets.yml', 'add_identifiers.yml', 'create_profiles.yml'):
+            text = (ROOT / '.github/workflows' / file).read_text()
+            boundary = text.index('- name: Run protected setup operation')
+            self.assertNotIn('secrets.', text[:boundary])
+            self.assertIn('environment: testflight', text)
+            self.assertIn("github.ref == 'refs/heads/main'", text)
+            self.assertNotIn('upload-artifact', text)
+        setup = (ROOT / '.github/workflows/create_profiles.yml').read_text()
+        self.assertIn('default: check', setup)
+        self.assertIn('prepare_profiles', setup)
+        upload = (ROOT / '.github/workflows/testflight.yml').read_text()
+        self.assertIn('Scripts/verify_delivery_ci.py', upload)
+        self.assertIn('release_gates_confirmed:', upload)
+        self.assertIn('default: false', upload)
+
     def test_both_targets_share_expanded_runtime_configuration(self):
         import plistlib
         app = plistlib.loads((ROOT / 'Config/InsulinOCR-Info.plist').read_bytes())
