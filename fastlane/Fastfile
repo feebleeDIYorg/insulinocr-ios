@@ -176,8 +176,9 @@ platform :ios do
   desc "Build and upload an internal TestFlight build"
   lane :beta do |options|
     if ENV["CI"] == "true"
-      UI.user_error!("Verified main CI and release acceptance are required") unless
-        ENV["INSULINOCR_VERIFIED_CI_HEAD"] == ENV.fetch("GITHUB_SHA") && ENV["INSULINOCR_RELEASE_GATES_CONFIRMED"] == "true"
+      event = JSON.parse(File.read(ENV.fetch("GITHUB_EVENT_PATH")))
+      UI.user_error!("Verified main CI and an explicitly selected internal upload are required") unless
+        InsulinOCRSetupPolicy.upload_authorized?(ENV, event)
     end
     test unless options[:tests_completed] == true && ENV["CI"] == "true"
     prepare_signing
@@ -226,7 +227,8 @@ platform :ios do
       upload_to_testflight(
       api_key: key,
       app_identifier: configured_app_identifier,
-      changelog: options[:release_notes] || ENV.fetch("RELEASE_NOTES", "Internaler InsulinOCR-Testbuild"),
+      changelog: InsulinOCRSetupPolicy.release_notes(ENV["INSULINOCR_DELIVERY_MODE"],
+        options[:release_notes] || ENV.fetch("RELEASE_NOTES", "Interner InsulinOCR-Testbuild")),
       groups: [TESTFLIGHT_GROUP],
       distribute_external: false,
       skip_waiting_for_build_processing: false

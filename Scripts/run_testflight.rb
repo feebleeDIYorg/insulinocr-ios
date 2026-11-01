@@ -19,8 +19,15 @@ begin
     event = JSON.parse(File.read(ENV.fetch("GITHUB_EVENT_PATH")))
     raise ArgumentError unless InsulinOCRSetupPolicy.profile_creation_authorized?(ENV, event)
   end
-  if mode == "upload"
-    raise ArgumentError unless ENV["INSULINOCR_VERIFIED_CI_HEAD"] == ENV.fetch("GITHUB_SHA") && ENV["INSULINOCR_RELEASE_GATES_CONFIRMED"] == "true"
+  if InsulinOCRSetupPolicy.upload_mode?(mode)
+    raise ArgumentError unless ENV["INSULINOCR_VERIFIED_CI_HEAD"] == ENV.fetch("GITHUB_SHA")
+    if mode == "upload"
+      stage = "release_acceptance"
+      raise ArgumentError unless ENV["INSULINOCR_RELEASE_GATES_CONFIRMED"] == "true"
+    end
+    stage = "dispatch"
+    event = JSON.parse(File.read(ENV.fetch("GITHUB_EVENT_PATH")))
+    raise ArgumentError unless InsulinOCRSetupPolicy.upload_authorized?(ENV, event)
   end
   stage = "configuration"
   config = InsulinOCRBuildConfiguration.parse(ENV.fetch("INSULINOCR_BUILD_CONFIG"), ENV.fetch("TEAMID"))
@@ -67,9 +74,12 @@ begin
       puts "::error::InsulinOCR delivery failed: stage=#{status['stage']} code=#{code}. Private diagnostics were not published."
     end
   end
-  puts(mode == "upload" ? "TestFlight upload completed." : "Requested delivery stage completed; no build uploaded.") if exit_code.zero?
+  puts(InsulinOCRSetupPolicy.upload_mode?(mode) ? "TestFlight upload completed." : "Requested delivery stage completed; no build uploaded.") if exit_code.zero?
 rescue StandardError => error
   puts "::error::InsulinOCR delivery failed: stage=#{stage} code=#{InsulinOCRDeliveryStatus.failure_code(stage, error)}. Private diagnostics were not published."
+  if stage == "release_acceptance"
+    puts "::error::Upload was not started: release_gates_confirmed must explicitly be true after the documented release criteria pass. Use preflight for a read-only signing check."
+  end
 ensure
   ENV.delete("INSULINOCR_DELIVERY_STATUS_FILE")
   FileUtils.rm_f(File.join(root, "Config/Local.generated.xcconfig"))
