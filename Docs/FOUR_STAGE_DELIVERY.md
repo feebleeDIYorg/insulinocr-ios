@@ -41,6 +41,12 @@ the reference workflows, with a one-minute bound.
    enter generic notes and approve that deployment. The confirmation is a human
    attestation, not a substitute for measured OCR/device/performance acceptance.
 
+   If `release_gates_confirmed` is false or missing, the upload stops before
+   signing with `stage=release_acceptance code=release_acceptance_required`.
+   Environment approval and successful CI do not set this separate confirmation.
+   Do not confirm uncompleted acceptance criteria; `preflight` remains available
+   for a read-only check without an upload.
+
 No distribution certificate or API key is generated or revoked by this sequence.
 An expired/missing/ambiguous identity stops setup. Match's certificate-generation
 path is explicitly blocked in profile setup. No certificate nuke workflow exists.
