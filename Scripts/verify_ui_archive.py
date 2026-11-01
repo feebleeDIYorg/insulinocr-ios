@@ -13,6 +13,7 @@ import json
 from pathlib import Path, PurePosixPath
 import subprocess
 import zipfile
+import uuid
 from zoneinfo import ZoneInfo
 
 ROOT = Path(__file__).resolve().parents[1]
@@ -158,12 +159,32 @@ def verify(path):
                 "original_bytes_preserved": True, "frozen_capture_time_preserved": True}
 
 
+
+def simulator_container(identifier):
+    # xcodebuild can shut the destination down after successful UI tests.
+    # Resume that exact existing device; never erase, recreate or rerun tests.
+    requested = uuid.UUID(identifier)
+    inventory = json.loads(subprocess.check_output(
+        ["xcrun", "simctl", "list", "devices", "available", "--json"], text=True, timeout=30))
+    devices = [device for group in inventory["devices"].values() for device in group
+               if device["udid"].lower() == str(requested).lower()]
+    require(len(devices) == 1, "Exact test simulator is unavailable")
+    device = devices[0]
+    require(device["isAvailable"], "Test simulator runtime is unavailable")
+    identifier = device["udid"]
+    require(device["state"] in ("Shutdown", "Booting", "Booted"), "Test simulator is not ready to start")
+    if device["state"] == "Shutdown":
+        subprocess.run(["xcrun", "simctl", "boot", identifier], check=True, timeout=60)
+    subprocess.run(["xcrun", "simctl", "bootstatus", identifier, "-b"], check=True, timeout=180)
+    return Path(subprocess.check_output(["xcrun", "simctl", "get_app_container", identifier,
+                                        "org.example.insulinocr", "data"], text=True, timeout=30).strip())
+
+
 def main():
     parser = argparse.ArgumentParser(description=__doc__)
     parser.add_argument("--udid", required=True)
     args = parser.parse_args()
-    container = Path(subprocess.check_output(["xcrun", "simctl", "get_app_container", args.udid,
-                    "org.example.insulinocr", "data"], text=True).strip())
+    container = simulator_container(args.udid)
     exports = list((container / "Library/Caches/InsulinOCRExports").glob("*.zip"))
     require(bool(exports), "UI did not create a QA archive")
     latest = max(exports, key=lambda path: path.stat().st_mtime)
