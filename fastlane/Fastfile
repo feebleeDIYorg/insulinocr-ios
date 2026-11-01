@@ -242,8 +242,18 @@ platform :ios do
     key = InsulinOCRDeliveryStatus.around("apple_key") { app_store_connect_key }
     version = get_version_number(xcodeproj: PROJECT, target: "InsulinOCR")
     InsulinOCRDeliveryStatus.around("distribution") do
+      app = Spaceship::ConnectAPI::App.find(configured_app_identifier)
+      UI.user_error!("Configured TestFlight app is missing") unless app
+      groups = app.get_beta_groups.select { |group| group.name == "InsulinOCR Internal" && group.is_internal_group == true }
+      UI.user_error!("One internal TestFlight group is required") unless groups.length == 1
+      builds = Spaceship::ConnectAPI::Build.all(app_id: app.id, version: version,
+        build_number: ENV.fetch("INSULINOCR_EXISTING_BUILD_NUMBER"), platform: "IOS")
+      UI.user_error!("One valid existing build of the current version is required") unless
+        builds.length == 1 && builds[0].processing_state == "VALID"
+      assigned = groups[0].fetch_builds.any? { |build| build.id == builds[0].id }
       upload_to_testflight(api_key: key, app_identifier: configured_app_identifier,
         distribute_only: true, app_version: version,
+        skip_submission: assigned,
         build_number: ENV.fetch("INSULINOCR_EXISTING_BUILD_NUMBER"),
         **InsulinOCRSetupPolicy.internal_distribution_options("qa_distribute",
           ENV.fetch("RELEASE_NOTES", "Interner InsulinOCR-Testbuild")),
