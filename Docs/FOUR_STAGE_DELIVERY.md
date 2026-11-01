@@ -44,6 +44,14 @@ the reference workflows, with a one-minute bound.
    the main workflow and the protected Environment approval. Delivery stays
    internal and Match stays read-only.
 
+   If Apple already accepted the binary but metadata or distribution failed,
+   select `qa_distribute` and provide `existing_build_number`. This finishes only
+   that build of the checked-in marketing version. It uses explicit German test
+   notes, disables external beta review and external notifications, and assigns
+   the existing internal group. It does not sign, archive, increment the build
+   number or upload a binary; Match credentials are not provided to this mode.
+   Exact-main CI and the protected Environment approval still apply.
+
    After the documented release gates actually pass, select `upload`, confirm
    `release_gates_confirmed`, enter generic notes and approve that deployment.
    The confirmation is a human attestation, not a substitute for measured

@@ -27,7 +27,11 @@ def prepare_signing
   prepare_delivery_configuration
   InsulinOCRDeliveryStatus.around("project_generation") { generate_project }
 end
-TESTFLIGHT_GROUP = "InsulinOCR Internal"
+def require_internal_delivery_authorization
+  event = JSON.parse(File.read(ENV.fetch("GITHUB_EVENT_PATH")))
+  UI.user_error!("Verified main CI and an explicitly selected internal delivery are required") unless
+    InsulinOCRSetupPolicy.delivery_authorized?(ENV, event)
+end
 
 def app_store_connect_key
   options = begin
@@ -175,11 +179,7 @@ platform :ios do
 
   desc "Build and upload an internal TestFlight build"
   lane :beta do |options|
-    if ENV["CI"] == "true"
-      event = JSON.parse(File.read(ENV.fetch("GITHUB_EVENT_PATH")))
-      UI.user_error!("Verified main CI and an explicitly selected internal upload are required") unless
-        InsulinOCRSetupPolicy.upload_authorized?(ENV, event)
-    end
+    require_internal_delivery_authorization if ENV["CI"] == "true"
     test unless options[:tests_completed] == true && ENV["CI"] == "true"
     prepare_signing
     key = read_only_signing_preflight
@@ -227,12 +227,37 @@ platform :ios do
       upload_to_testflight(
       api_key: key,
       app_identifier: configured_app_identifier,
-      changelog: InsulinOCRSetupPolicy.release_notes(ENV["INSULINOCR_DELIVERY_MODE"],
+      **InsulinOCRSetupPolicy.internal_distribution_options(ENV["INSULINOCR_DELIVERY_MODE"],
         options[:release_notes] || ENV.fetch("RELEASE_NOTES", "Interner InsulinOCR-Testbuild")),
-      groups: [TESTFLIGHT_GROUP],
-      distribute_external: false,
       skip_waiting_for_build_processing: false
       )
+    end
+  end
+
+  desc "Finish one existing internal QA build without signing, archiving or uploading"
+  lane :distribute_existing_qa do
+    UI.user_error!("Protected manual CI delivery is required") unless ENV["CI"] == "true" && ENV["INSULINOCR_DELIVERY_MODE"] == "qa_distribute"
+    require_internal_delivery_authorization
+    prepare_signing # Configuration and project generation only; no Match call.
+    key = InsulinOCRDeliveryStatus.around("apple_key") { app_store_connect_key }
+    version = get_version_number(xcodeproj: PROJECT, target: "InsulinOCR")
+    InsulinOCRDeliveryStatus.around("distribution") do
+      app = Spaceship::ConnectAPI::App.find(configured_app_identifier)
+      UI.user_error!("Configured TestFlight app is missing") unless app
+      groups = app.get_beta_groups.select { |group| group.name == "InsulinOCR Internal" && group.is_internal_group == true }
+      UI.user_error!("One internal TestFlight group is required") unless groups.length == 1
+      builds = Spaceship::ConnectAPI::Build.all(app_id: app.id, version: version,
+        build_number: ENV.fetch("INSULINOCR_EXISTING_BUILD_NUMBER"), platform: "IOS")
+      UI.user_error!("One valid existing build of the current version is required") unless
+        builds.length == 1 && builds[0].processing_state == "VALID"
+      assigned = groups[0].fetch_builds.any? { |build| build.id == builds[0].id }
+      upload_to_testflight(api_key: key, app_identifier: configured_app_identifier,
+        distribute_only: true, app_version: version,
+        skip_submission: assigned,
+        build_number: ENV.fetch("INSULINOCR_EXISTING_BUILD_NUMBER"),
+        **InsulinOCRSetupPolicy.internal_distribution_options("qa_distribute",
+          ENV.fetch("RELEASE_NOTES", "Interner InsulinOCR-Testbuild")).merge(groups: [groups[0].id]),
+        skip_waiting_for_build_processing: false)
     end
   end
 end

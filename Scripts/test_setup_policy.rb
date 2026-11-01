@@ -44,25 +44,33 @@ upload = {"INSULINOCR_DELIVERY_MODE" => "qa_upload", "GITHUB_SHA" => sha,
  "GITHUB_WORKFLOW_REF" => "synthetic/app/.github/workflows/testflight.yml@refs/heads/main",
  "INSULINOCR_RELEASE_GATES_CONFIRMED" => "false"}
 qa_event = {"inputs" => {"mode" => "qa_upload"}}
-assert.call(InsulinOCRSetupPolicy.upload_authorized?(upload, qa_event)); checks += 1
+assert.call(InsulinOCRSetupPolicy.delivery_authorized?(upload, qa_event)); checks += 1
 assert.call(InsulinOCRSetupPolicy.lane("qa_upload") == "beta"); checks += 1
 [{"GITHUB_REF" => "refs/heads/other"}, {"GITHUB_EVENT_NAME" => "push"},
  {"GITHUB_WORKFLOW_REF" => "synthetic/app/.github/workflows/ci.yml@refs/heads/main"},
  {"GITHUB_REPOSITORY" => "other/app"}, {"INSULINOCR_VERIFIED_CI_HEAD" => "b" * 40},
  {"GITHUB_SHA" => nil, "INSULINOCR_VERIFIED_CI_HEAD" => nil},
  {"INSULINOCR_DELIVERY_MODE" => "preflight"}].each do |changes|
- assert.call(!InsulinOCRSetupPolicy.upload_authorized?(upload.merge(changes), qa_event)); checks += 1
+ assert.call(!InsulinOCRSetupPolicy.delivery_authorized?(upload.merge(changes), qa_event)); checks += 1
 end
-assert.call(!InsulinOCRSetupPolicy.upload_authorized?(upload, {"inputs" => {"mode" => "upload"}})); checks += 1
+assert.call(!InsulinOCRSetupPolicy.delivery_authorized?(upload, {"inputs" => {"mode" => "upload"}})); checks += 1
 [nil, [], {"inputs" => []}].each do |invalid_event|
- assert.call(!InsulinOCRSetupPolicy.upload_authorized?(upload, invalid_event)); checks += 1
+ assert.call(!InsulinOCRSetupPolicy.delivery_authorized?(upload, invalid_event)); checks += 1
 end
 accepted = upload.merge("INSULINOCR_DELIVERY_MODE" => "upload", "INSULINOCR_RELEASE_GATES_CONFIRMED" => "true")
 accepted_event = {"inputs" => {"mode" => "upload"}}
-assert.call(InsulinOCRSetupPolicy.upload_authorized?(accepted, accepted_event)); checks += 1
-assert.call(!InsulinOCRSetupPolicy.upload_authorized?(accepted.merge("INSULINOCR_RELEASE_GATES_CONFIRMED" => "false"), accepted_event)); checks += 1
+assert.call(InsulinOCRSetupPolicy.delivery_authorized?(accepted, accepted_event)); checks += 1
+assert.call(!InsulinOCRSetupPolicy.delivery_authorized?(accepted.merge("INSULINOCR_RELEASE_GATES_CONFIRMED" => "false"), accepted_event)); checks += 1
 assert.call(InsulinOCRSetupPolicy.release_notes("qa_upload", "Synthetic notes") == "#{InsulinOCRSetupPolicy::QA_NOTICE}\n\nSynthetic notes"); checks += 1
 assert.call(InsulinOCRSetupPolicy.release_notes("upload", "Synthetic notes") == "Synthetic notes"); checks += 1
+resume = upload.merge("INSULINOCR_DELIVERY_MODE" => "qa_distribute", "INSULINOCR_EXISTING_BUILD_NUMBER" => "1")
+resume_event = {"inputs" => {"mode" => "qa_distribute", "existing_build_number" => "1"}}
+assert.call(InsulinOCRSetupPolicy.delivery_authorized?(resume, resume_event)); checks += 1
+[nil, "", "0", "-1", "1\n", "1; invalid", "1" * 19].each do |invalid_number|
+ assert.call(!InsulinOCRSetupPolicy.delivery_authorized?(resume.merge("INSULINOCR_EXISTING_BUILD_NUMBER" => invalid_number), resume_event)); checks += 1
+end
+assert.call(!InsulinOCRSetupPolicy.delivery_authorized?(resume, {"inputs" => {"mode" => "qa_distribute", "existing_build_number" => "2"}})); checks += 1
+assert.call(!InsulinOCRSetupPolicy.upload_mode?("qa_distribute") && InsulinOCRSetupPolicy.lane("qa_distribute") == "distribute_existing_qa"); checks += 1
 require "match"
 Match::Generator.singleton_class.prepend(InsulinOCRSetupPolicy::ExistingCertificateOnly)
 reject.call { Match::Generator.generate_certificate(nil, nil, nil) }; checks += 1
