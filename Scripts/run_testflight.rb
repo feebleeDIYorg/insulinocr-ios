@@ -6,6 +6,7 @@ require "tmpdir"
 require_relative "../fastlane/lib/insulinocr_build_configuration"
 require_relative "../fastlane/lib/insulinocr_credentials"
 require_relative "../fastlane/lib/insulinocr_delivery_status"
+require_relative "../fastlane/lib/insulinocr_setup_policy"
 
 root = File.expand_path("..", __dir__)
 exit_code = 1
@@ -13,7 +14,14 @@ stage = "dispatch"
 begin
   raise ArgumentError unless ENV["GITHUB_REF"] == "refs/heads/main" && ENV["GITHUB_EVENT_NAME"] == "workflow_dispatch"
   mode = ENV.fetch("INSULINOCR_DELIVERY_MODE", "preflight")
-  raise ArgumentError unless %w[preflight upload].include?(mode)
+  lane = InsulinOCRSetupPolicy.lane(mode)
+  if mode == "profiles_apply"
+    event = JSON.parse(File.read(ENV.fetch("GITHUB_EVENT_PATH")))
+    raise ArgumentError unless InsulinOCRSetupPolicy.profile_creation_authorized?(ENV, event)
+  end
+  if mode == "upload"
+    raise ArgumentError unless ENV["INSULINOCR_VERIFIED_CI_HEAD"] == ENV.fetch("GITHUB_SHA") && ENV["INSULINOCR_RELEASE_GATES_CONFIRMED"] == "true"
+  end
   stage = "configuration"
   config = InsulinOCRBuildConfiguration.parse(ENV.fetch("INSULINOCR_BUILD_CONFIG"), ENV.fetch("TEAMID"))
   config.values.each { |value| puts "::add-mask::#{value}" }
@@ -32,6 +40,16 @@ begin
   raise ArgumentError unless response.code == "200"
   metadata = JSON.parse(response.body)
   raise ArgumentError unless metadata["private"] == true && metadata.dig("permissions", "pull") == true
+  raise ArgumentError if mode == "profiles_apply" && metadata.dig("permissions", "push") != true
+  branch = config.fetch("match_git_branch", "main")
+  tree_uri = URI("https://api.github.com/repos/#{repository}/git/trees/#{URI.encode_www_form_component(branch)}?recursive=1")
+  tree_request = Net::HTTP::Get.new(tree_uri)
+  tree_request["Authorization"] = "Bearer #{token}"
+  tree_request["Accept"] = "application/vnd.github+json"
+  tree_response = Net::HTTP.start(tree_uri.host, tree_uri.port, use_ssl: true, open_timeout: 15, read_timeout: 30) { |http| http.request(tree_request) }
+  raise ArgumentError unless tree_response.code == "200"
+  ENV["INSULINOCR_EXISTING_CERTIFICATE_ID"] = InsulinOCRSetupPolicy.existing_certificate_id(JSON.parse(tree_response.body))
+  puts "::add-mask::#{ENV.fetch('INSULINOCR_EXISTING_CERTIFICATE_ID')}"
   ENV["MATCH_GIT_BASIC_AUTHORIZATION"] = Base64.strict_encode64("x-access-token:#{token}")
   puts "::add-mask::#{ENV.fetch('MATCH_GIT_BASIC_AUTHORIZATION')}"
   $stdout.flush
@@ -40,7 +58,6 @@ begin
     ENV["INSULINOCR_DELIVERY_STATUS_FILE"] = status_path
     InsulinOCRDeliveryStatus.record("dispatch", "in_progress")
     File.open(File.join(directory, "signing.log"), "w", 0o600) do |log|
-      lane = mode == "preflight" ? "signing_preflight" : "beta"
       success = system("bundle", "exec", "fastlane", "ios", lane, "tests_completed:true", chdir: root, out: log, err: log)
       exit_code = success ? 0 : 1
     end
@@ -50,7 +67,7 @@ begin
       puts "::error::InsulinOCR delivery failed: stage=#{status['stage']} code=#{code}. Private diagnostics were not published."
     end
   end
-  puts(mode == "preflight" ? "Read-only signing preflight completed; no build uploaded." : "TestFlight upload completed.") if exit_code.zero?
+  puts(mode == "upload" ? "TestFlight upload completed." : "Requested delivery stage completed; no build uploaded.") if exit_code.zero?
 rescue StandardError => error
   puts "::error::InsulinOCR delivery failed: stage=#{stage} code=#{InsulinOCRDeliveryStatus.failure_code(stage, error)}. Private diagnostics were not published."
 ensure

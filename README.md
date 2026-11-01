@@ -79,9 +79,9 @@ its exported archive. Simulator App Groups require the lane's local ad-hoc
 signatures; no Apple signing secrets are needed. See [Simulator QA](Docs/UI_QA.md)
 for the synthetic fixture, isolated Simulator selection and repeat-run behavior.
 
-Development signing is automatic. Release signing uses the Match profile named
-`match AppStore <bundle-id>` from the separate
-private signing repository selected outside Git.
+Development signing is automatic. Release signing uses the profiles selected by
+Match from the private signing repository configured outside Git. Their actual
+display names are applied to both Xcode targets and export options.
 
 ## Test data policy
 
@@ -126,3 +126,6 @@ The application repository is proprietary. Third-party notices are in
 [NOTICE.md](NOTICE.md). Activity algorithms are clean-room implementations based
 on the original MIT-licensed OpenAPS and LoopKit references. No GPL code from
 the organization’s `xdripswift` fork is copied into this repository.
+
+The manual [four-stage delivery](Docs/FOUR_STAGE_DELIVERY.md) separates credential
+validation, identifiers, explicitly approved profile setup and TestFlight delivery.

@@ -2,6 +2,7 @@ require "base64"
 require_relative "lib/insulinocr_credentials"
 require_relative "lib/insulinocr_build_configuration"
 require_relative "lib/insulinocr_delivery_status"
+require_relative "lib/insulinocr_setup_policy"
 
 default_platform(:ios)
 
@@ -18,8 +19,12 @@ def configured_app_identifiers
   [configured_app_identifier, "#{configured_app_identifier}.share"]
 end
 
-def prepare_signing
+def prepare_delivery_configuration
   InsulinOCRDeliveryStatus.around("configuration") { InsulinOCRBuildConfiguration.prepare(PROJECT_ROOT, signing: true) }
+end
+
+def prepare_signing
+  prepare_delivery_configuration
   InsulinOCRDeliveryStatus.around("project_generation") { generate_project }
 end
 TESTFLIGHT_GROUP = "InsulinOCR Internal"
@@ -50,6 +55,7 @@ def read_only_signing_preflight
       api_key: key,
       git_url: ENV.fetch("MATCH_GIT_URL"),
       git_branch: ENV.fetch("MATCH_GIT_BRANCH"),
+      certificate_id: ENV["INSULINOCR_EXISTING_CERTIFICATE_ID"],
       readonly: true
     )
   end
@@ -57,6 +63,61 @@ def read_only_signing_preflight
 end
 
 platform :ios do
+  desc "1. Validate existing credentials and encrypted certificate without requiring app profiles"
+  lane :validate_secrets do
+    prepare_delivery_configuration
+    key = InsulinOCRDeliveryStatus.around("apple_key") { app_store_connect_key }
+    InsulinOCRDeliveryStatus.around("keychain") { setup_ci } if ENV["CI"] == "true"
+    InsulinOCRDeliveryStatus.around("apple_access") do
+      certificate = Spaceship::ConnectAPI::Certificate.get(certificate_id: ENV.fetch("INSULINOCR_EXISTING_CERTIFICATE_ID"))
+      UI.user_error!("Existing distribution certificate is unavailable") unless certificate &&
+        %w[DISTRIBUTION IOS_DISTRIBUTION].include?(certificate.certificate_type) && Time.parse(certificate.expiration_date) > Time.now
+    end
+    InsulinOCRDeliveryStatus.around("match") do
+      sync_code_signing(type: "appstore", app_identifier: [], skip_provisioning_profiles: true,
+        team_id: ENV.fetch("APPLE_TEAM_ID"), api_key: key, git_url: ENV.fetch("MATCH_GIT_URL"),
+        git_branch: ENV.fetch("MATCH_GIT_BRANCH"), certificate_id: ENV.fetch("INSULINOCR_EXISTING_CERTIFICATE_ID"), readonly: true)
+    end
+  end
+
+  desc "2. Add missing app identifiers and capabilities without removing existing capabilities"
+  lane :identifiers do
+    validate_secrets
+    InsulinOCRDeliveryStatus.around("identifiers") do
+      [[configured_app_identifier, "InsulinOCR", %w[APP_GROUPS ICLOUD PUSH_NOTIFICATIONS DATA_PROTECTION]],
+       ["#{configured_app_identifier}.share", "InsulinOCR Share", %w[APP_GROUPS DATA_PROTECTION]]].each do |identifier, name, capabilities|
+        # Apple's identifier filter is a prefix search; require exact identity.
+        matches = Spaceship::ConnectAPI::BundleId.all(filter: {identifier: identifier}).select { |bundle| bundle.identifier == identifier }
+        UI.user_error!("Ambiguous registered app identifier") if matches.length > 1
+        bundle = matches.first || Spaceship::ConnectAPI::BundleId.create(name: name, identifier: identifier, platform: "IOS")
+        existing = bundle.get_capabilities.map(&:capability_type)
+        (capabilities - existing).each { |capability| bundle.create_capability(capability) }
+      end
+    end
+  end
+
+  desc "3. Check existing app profiles without generating an Xcode project"
+  lane :check_profiles do
+    prepare_delivery_configuration
+    read_only_signing_preflight
+  end
+
+  desc "3. Prepare only app profiles using the existing encrypted distribution identity"
+  lane :prepare_profiles do
+    event = JSON.parse(File.read(ENV.fetch("GITHUB_EVENT_PATH")))
+    UI.user_error!("Explicit protected profile setup is required") unless InsulinOCRSetupPolicy.profile_creation_authorized?(ENV, event)
+    validate_secrets
+    # Block Match's certificate generation path, including expiry races.
+    Match::Generator.singleton_class.prepend(InsulinOCRSetupPolicy::ExistingCertificateOnly)
+    key = app_store_connect_key
+    InsulinOCRDeliveryStatus.around("profiles") do
+      sync_code_signing(type: "appstore", app_identifier: configured_app_identifiers,
+        team_id: ENV.fetch("APPLE_TEAM_ID"), api_key: key, git_url: ENV.fetch("MATCH_GIT_URL"),
+        git_branch: ENV.fetch("MATCH_GIT_BRANCH"), certificate_id: ENV.fetch("INSULINOCR_EXISTING_CERTIFICATE_ID"),
+        readonly: false, force: false, verbose: false)
+    end
+  end
+
   desc "Generate the project and execute core, integration, and UI tests on Simulator"
   lane :test do
     InsulinOCRBuildConfiguration.prepare(PROJECT_ROOT, signing: false)
@@ -114,9 +175,21 @@ platform :ios do
 
   desc "Build and upload an internal TestFlight build"
   lane :beta do |options|
+    if ENV["CI"] == "true"
+      UI.user_error!("Verified main CI and release acceptance are required") unless
+        ENV["INSULINOCR_VERIFIED_CI_HEAD"] == ENV.fetch("GITHUB_SHA") && ENV["INSULINOCR_RELEASE_GATES_CONFIRMED"] == "true"
+    end
     test unless options[:tests_completed] == true && ENV["CI"] == "true"
     prepare_signing
     key = read_only_signing_preflight
+
+    profiles = InsulinOCRSetupPolicy.profile_mapping(configured_app_identifiers,
+      Actions.lane_context[SharedValues::MATCH_PROVISIONING_PROFILE_MAPPING])
+    configured_app_identifiers.zip(["InsulinOCR", "InsulinOCRShareExtension"]).each do |identifier, target|
+      update_code_signing_settings(path: PROJECT, use_automatic_signing: false,
+        team_id: ENV.fetch("APPLE_TEAM_ID"), profile_name: profiles.fetch(identifier),
+        targets: [target], build_configurations: ["Release"])
+    end
 
     next_build_number = InsulinOCRDeliveryStatus.around("app_store_build_number") do
       latest_testflight_build_number(
@@ -144,7 +217,7 @@ platform :ios do
         method: "app-store",
         signingStyle: "manual",
         teamID: ENV.fetch("APPLE_TEAM_ID"),
-        provisioningProfiles: configured_app_identifiers.to_h { |identifier| [identifier, "match AppStore #{identifier}"] }
+        provisioningProfiles: profiles
       }
       )
     end

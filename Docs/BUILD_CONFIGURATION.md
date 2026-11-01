@@ -36,8 +36,10 @@ simulator team are rejected for signing.
 Reuse the authorized organization secrets `FASTLANE_KEY_ID`, `FASTLANE_ISSUER_ID`,
 `FASTLANE_KEY` (raw PEM), `TEAMID`, `GH_PAT` and `MATCH_PASSWORD`. Their repository
 visibility and the token's read access must be checked before activation. The
-workflow does not create keys, applications, certificates or profiles. Its
-Match operation is read-only; an incompatible password stops delivery.
+build workflow reads Match only; an incompatible password stops delivery.
+The separate, explicitly approved setup actions can add the app identifiers and
+the two app profiles using the existing certificate. They never create or revoke
+certificates or API keys. See [four-stage delivery](FOUR_STAGE_DELIVERY.md).
 
 Environment approval protects this configuration secret. It does not restrict
 organization secrets independently referenced by other workflows. Limit write

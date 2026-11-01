@@ -13,8 +13,9 @@ for the current internal evaluation is described below.
 3. Configure the App Store Connect app and an internal TestFlight group.
 4. Reuse a suitable existing App Store Connect key and approved repository
    authentication. Confirm permissions and encrypted-store compatibility.
-5. Bootstrap signing only on an authorized workstation. CI must use read-only
-   Match and must not regenerate, revoke or publish signing material.
+5. Bootstrap signing only through explicitly approved setup operations. Build CI
+   must use read-only Match. The separate profile setup action may prepare only
+   the two app profiles using the existing certificate; see [four-stage delivery](FOUR_STAGE_DELIVERY.md).
 6. Configure main-only deployment, required review and protected branch checks
    before any delivery workflow is run.
 
@@ -33,7 +34,9 @@ available. No new signing GitHub App is created.
 
 Configure main-only deployment and review protections before delivery. Do not
 print secret values or upload private signing artifacts. Match remains read-only
-in CI; only an authorized local bootstrap may update signing material.
+in build CI. Only an authorized workstation bootstrap or the separately approved
+profile setup action may update the two app profiles; certificate creation and
+revocation are excluded from the four-stage workflow.
 
 ## Preflight
 
@@ -63,13 +66,14 @@ in CI; only an authorized local bootstrap may update signing material.
 
 ## Upload
 
-First run `testflight` in its default `preflight` mode and approve the protected
+Follow the [four-stage setup](FOUR_STAGE_DELIVERY.md) to validate secrets and
+prepare missing app profiles separately. Then run `testflight` in its default `preflight` mode and approve the protected
 Environment to verify existing signing credentials without uploading. Only after
 all release gates pass, select `upload`, enter concise release notes, and approve
 the Environment again. The workflow:
 
 1. verifies the exact Xcode build;
-2. runs package, app, integration, and UI tests;
+2. verifies successful package, app, integration and UI CI on the exact main commit;
 3. reads Match with `readonly: true`;
 4. selects the next build number from App Store Connect;
 5. archives and uploads to `InsulinOCR Internal`.

@@ -1,4 +1,4 @@
-name: testflight
+name: 4. Build and TestFlight
 
 on:
   workflow_dispatch:
@@ -9,6 +9,11 @@ on:
         default: preflight
         type: choice
         options: [preflight, upload]
+      release_gates_confirmed:
+        description: Confirm the documented device, OCR, math, performance and privacy release gates before upload
+        required: true
+        type: boolean
+        default: false
       release_notes:
         description: Internal TestFlight release notes
         required: true
@@ -16,9 +21,10 @@ on:
 
 permissions:
   contents: read
+  actions: read
 
 concurrency:
-  group: testflight-upload
+  group: insulinocr-signing-store
   cancel-in-progress: false
 
 jobs:
@@ -82,8 +88,14 @@ jobs:
           bundle exec ruby -e 'abort unless Gem::Specification.find_by_name("fastlane").version.to_s == "2.241.1"'
           git diff --exit-code -- Gemfile.lock
 
-      - name: Verify synthetic Simulator flow without signing secrets
-        run: bundle exec fastlane ios test
+      - name: Require successful CI for the exact main commit
+        env:
+          GITHUB_TOKEN: ${{ github.token }}
+        run: python3 Scripts/verify_delivery_ci.py
+
+      - name: Synchronize ephemeral runner clock
+        timeout-minutes: 1
+        run: sudo sntp -sS time.windows.com
 
       - name: Upload internal TestFlight build
         env:
@@ -96,5 +108,6 @@ jobs:
           MATCH_PASSWORD: ${{ secrets.MATCH_PASSWORD }}
           MATCH_READONLY: "true"
           INSULINOCR_DELIVERY_MODE: ${{ inputs.mode }}
+          INSULINOCR_RELEASE_GATES_CONFIRMED: ${{ inputs.release_gates_confirmed }}
           RELEASE_NOTES: ${{ inputs.release_notes }}
         run: bundle exec ruby Scripts/run_testflight.rb
