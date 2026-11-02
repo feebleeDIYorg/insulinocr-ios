@@ -317,11 +317,15 @@ enum OCRLayoutDetector {
 
     static func futurePanelBoundary(image: OCRPixelImage, frame: OCRNormalizedRect) -> Double? {
         let bounds = image.pixelRect(for: frame)
-        let minimumWidth = max(8, bounds.width / 40)
+        // Panel evidence must exceed a gridline's display-scale thickness.
+        // A fraction of chart width rejects short future intervals on long charts.
+        let maximumGridlineGap = max(4, image.width / 300)
+        let minimumWidth = maximumGridlineGap * 2
         let edgeTolerance = max(12, bounds.width / 30)
         var panelRight: Int?
         var panelLeft: Int?
         var gap = 0
+        var panelColumns = 0
         for x in stride(from: bounds.maxX - 1, through: bounds.x + bounds.width / 2, by: -1) {
             var grey = 0
             var total = 0
@@ -337,12 +341,14 @@ enum OCRLayoutDetector {
             if isPanel {
                 panelRight = panelRight ?? x
                 panelLeft = x
+                panelColumns += 1
                 gap = 0
             } else if let right = panelRight, let left = panelLeft {
                 // Thin vertical gridlines also cross the future panel.
                 gap += 1
-                if gap <= max(4, image.width / 300) { continue }
-                guard right - left + 1 >= minimumWidth else { return nil }
+                if gap <= maximumGridlineGap { continue }
+                guard right - left + 1 >= minimumWidth,
+                      panelColumns >= minimumWidth else { return nil }
                 return Double(left) / Double(image.width)
             } else if bounds.maxX - x > edgeTolerance {
                 return nil

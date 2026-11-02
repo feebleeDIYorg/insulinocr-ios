@@ -3,7 +3,7 @@ require "json"
 # Only these fixed tokens may cross the private signing-log boundary.
 module InsulinOCRDeliveryStatus
   STAGES = %w[dispatch release_acceptance configuration credentials repository_access project_generation apple_key apple_access identifiers profiles keychain match app_store_build_number archive upload distribution].freeze
-  CODES = %w[in_progress completed dispatch_invalid release_acceptance_required configuration_invalid credentials_invalid repository_access_failed project_generation_failed apple_key_invalid apple_access_failed identifiers_failed profiles_failed keychain_failed match_decryption_failed match_profile_missing match_apple_auth_failed match_failed app_store_build_number_failed archive_failed upload_failed distribution_failed process_failed status_unavailable].freeze
+  CODES = %w[in_progress completed dispatch_invalid release_acceptance_required configuration_invalid credentials_invalid repository_access_failed project_generation_failed apple_key_invalid apple_access_failed identifiers_failed profiles_failed keychain_failed match_decryption_failed match_profile_missing match_apple_auth_failed match_failed app_store_build_number_failed archive_failed upload_failed distribution_failed testflight_app_missing testflight_internal_group_missing testflight_existing_build_missing testflight_notes_failed testflight_api_access_denied process_failed status_unavailable].freeze
 
   def self.record(stage, code, env: ENV)
     raise ArgumentError, "Invalid diagnostic token" unless STAGES.include?(stage) && CODES.include?(code)
@@ -17,6 +17,14 @@ module InsulinOCRDeliveryStatus
   end
 
   def self.failure_code(stage, error)
+    if %w[upload distribution].include?(stage)
+      message = error.message.to_s
+      return "testflight_app_missing" if message.include?("Configured TestFlight app is missing")
+      return "testflight_internal_group_missing" if message.include?("One internal TestFlight group is required")
+      return "testflight_existing_build_missing" if message.include?("One valid existing build of the current version is required")
+      return "testflight_notes_failed" if message.match?(/could not set changelog|betaBuildLocalizations|whatsNew/i)
+      return "testflight_api_access_denied" if message.match?(/forbidden|unauthori[sz]ed|access denied/i)
+    end
     if stage == "match"
       # Inspect locally; never return or persist any substring of an exception.
       message = error.message.to_s
