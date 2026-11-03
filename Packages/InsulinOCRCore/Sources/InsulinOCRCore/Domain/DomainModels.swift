@@ -381,6 +381,8 @@ public struct AnalysisQuality: Codable, Hashable, Sendable {
     public let eventConfidence: Double
     public let blockers: Set<AnalysisBlocker>
     public let warnings: [String]
+    public let clockValidated: Bool?
+    public let eventIssuesLocalized: Bool?
 
     public init(
         layoutConfidence: Double,
@@ -389,7 +391,9 @@ public struct AnalysisQuality: Codable, Hashable, Sendable {
         glucoseConfidence: Double,
         eventConfidence: Double,
         blockers: Set<AnalysisBlocker> = [],
-        warnings: [String] = []
+        warnings: [String] = [],
+        clockValidated: Bool? = nil,
+        eventIssuesLocalized: Bool? = nil
     ) {
         self.layoutConfidence = layoutConfidence
         self.timeAxisConfidence = timeAxisConfidence
@@ -398,6 +402,8 @@ public struct AnalysisQuality: Codable, Hashable, Sendable {
         self.eventConfidence = eventConfidence
         self.blockers = blockers
         self.warnings = warnings
+        self.clockValidated = clockValidated
+        self.eventIssuesLocalized = eventIssuesLocalized
     }
 }
 
@@ -558,6 +564,23 @@ public enum CriticalDataIssue: String, Codable, Hashable, Sendable {
     case unclassifiedEvent
 }
 
+public struct ActivityAssessment: Codable, Hashable, Sendable {
+    public let referenceDate: Date
+    public let diaMinutes: Int
+    public let carbAbsorptionMinutes: Int
+
+    public init(referenceDate: Date, settings: TherapySettings) {
+        self.referenceDate = referenceDate
+        self.diaMinutes = settings.diaMinutes
+        self.carbAbsorptionMinutes = settings.carbAbsorptionMinutes
+    }
+
+    public func matches(referenceDate: Date, settings: TherapySettings) -> Bool {
+        self.referenceDate == referenceDate && referenceDate.timeIntervalSinceReferenceDate.isFinite
+            && diaMinutes == settings.diaMinutes && carbAbsorptionMinutes == settings.carbAbsorptionMinutes
+    }
+}
+
 public struct EffectiveTherapyData: Codable, Hashable, Sendable {
     public let basalSegments: [BasalSegment]
     public let boluses: [InsulinEvent]
@@ -567,6 +590,8 @@ public struct EffectiveTherapyData: Codable, Hashable, Sendable {
     public let sourceAnalysisRunID: UUID?
     public let sourceCorrectionRevisionID: UUID?
     public let observedHistoryMinutes: Double?
+    public let inactiveUncertainObservationIDs: [UUID]?
+    public let activityAssessment: ActivityAssessment?
 
     public init(
         basalSegments: [BasalSegment],
@@ -576,7 +601,9 @@ public struct EffectiveTherapyData: Codable, Hashable, Sendable {
         unresolvedIssues: Set<CriticalDataIssue> = [],
         sourceAnalysisRunID: UUID? = nil,
         sourceCorrectionRevisionID: UUID? = nil,
-        observedHistoryMinutes: Double? = nil
+        observedHistoryMinutes: Double? = nil,
+        inactiveUncertainObservationIDs: [UUID]? = nil,
+        activityAssessment: ActivityAssessment? = nil
     ) {
         self.basalSegments = basalSegments
         self.boluses = boluses
@@ -586,10 +613,13 @@ public struct EffectiveTherapyData: Codable, Hashable, Sendable {
         self.sourceAnalysisRunID = sourceAnalysisRunID
         self.sourceCorrectionRevisionID = sourceCorrectionRevisionID
         self.observedHistoryMinutes = observedHistoryMinutes
+        self.inactiveUncertainObservationIDs = inactiveUncertainObservationIDs
+        self.activityAssessment = activityAssessment
     }
 }
 
 public enum EffectiveDataError: Error, Equatable, Sendable {
+    case invalidReferenceDate
     case revisionForDifferentAnalysisRun
     case invalidCorrectionTarget(UUID)
     case invalidObservation(UUID)
@@ -599,9 +629,17 @@ public protocol EffectiveDataReducer: Sendable {
     func reduce(analysisRun: AnalysisRun, revisions: [CorrectionRevision]) throws -> EffectiveTherapyData
     func reduce(analysisRun: AnalysisRun, revisions: [CorrectionRevision],
                 basalCoverageWindow: DateInterval) throws -> EffectiveTherapyData
+    func reduce(analysisRun: AnalysisRun, revisions: [CorrectionRevision],
+                referenceDate: Date, settings: TherapySettings) throws -> EffectiveTherapyData
 }
 
 public extension EffectiveDataReducer {
+    func reduce(analysisRun: AnalysisRun, revisions: [CorrectionRevision],
+                referenceDate: Date, settings: TherapySettings) throws -> EffectiveTherapyData {
+        guard referenceDate.timeIntervalSinceReferenceDate.isFinite else { throw EffectiveDataError.invalidReferenceDate }
+        return try reduce(analysisRun: analysisRun, revisions: revisions,
+            basalCoverageWindow: DateInterval(start: referenceDate.addingTimeInterval(-Double(settings.diaMinutes) * 60), end: referenceDate))
+    }
     // Existing conformers remain conservative until they implement contextual review.
     func reduce(analysisRun: AnalysisRun, revisions: [CorrectionRevision],
                 basalCoverageWindow: DateInterval) throws -> EffectiveTherapyData {

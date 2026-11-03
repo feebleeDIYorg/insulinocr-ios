@@ -343,10 +343,8 @@ final class AppModel {
     ) throws {
         guard let library else { return }
         let therapySettings = try makeTherapySettings()
-        let window = DateInterval(start: record.captureTime.addingTimeInterval(-Double(therapySettings.diaMinutes) * 60),
-                                  end: record.captureTime)
         let effectiveData = try reducer.reduce(analysisRun: analysisRun, revisions: revisions,
-                                               basalCoverageWindow: window)
+                                               referenceDate: record.captureTime, settings: therapySettings)
         let result = activityCalculator.calculate(
             data: effectiveData,
             settings: therapySettings,

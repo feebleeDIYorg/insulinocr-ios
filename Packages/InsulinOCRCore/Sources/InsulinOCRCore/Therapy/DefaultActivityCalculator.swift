@@ -1,7 +1,7 @@
 import Foundation
 
 public struct DefaultActivityCalculator: ActivityCalculator {
-    public static let modelVersion = "openaps-exponential+loopkit-cob/1.2.2"
+    public static let modelVersion = "openaps-exponential+loopkit-cob/1.2.3"
 
     public init() {}
 
@@ -25,7 +25,9 @@ public struct DefaultActivityCalculator: ActivityCalculator {
             unresolvedIssues: data.unresolvedIssues,
             sourceAnalysisRunID: data.sourceAnalysisRunID,
             sourceCorrectionRevisionID: data.sourceCorrectionRevisionID,
-            observedHistoryMinutes: data.observedHistoryMinutes)
+            observedHistoryMinutes: data.observedHistoryMinutes,
+            inactiveUncertainObservationIDs: data.inactiveUncertainObservationIDs,
+            activityAssessment: data.activityAssessment)
         let current = snapshot(data: frozenData, settings: settings, date: referenceDate)
         let step = max(1, forecastStepMinutes)
         let horizonMinutes = max(
@@ -57,6 +59,12 @@ public struct DefaultActivityCalculator: ActivityCalculator {
         date: Date,
         coverageReferenceDate: Date
     ) -> ActivitySnapshot {
+        if data.activityAssessment.map({ !$0.matches(referenceDate: coverageReferenceDate, settings: settings) }) == true
+            || (data.inactiveUncertainObservationIDs?.isEmpty == false && data.activityAssessment == nil) {
+            return ActivitySnapshot(date: date,
+                basalIOB: .unavailable(.invalidModelParameters), bolusIOB: .unavailable(.invalidModelParameters),
+                totalIOB: .unavailable(.invalidModelParameters), cob: .unavailable(.invalidModelParameters))
+        }
         let requiredHistory = Double(max(settings.diaMinutes,
             settings.carbAbsorptionMinutes + Int(CarbohydrateAbsorptionModel.delayMinutes)))
         if data.sourceAnalysisRunID != nil || data.observedHistoryMinutes != nil {

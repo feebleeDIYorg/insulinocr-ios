@@ -152,7 +152,11 @@ public extension OCRAnalysisResult {
             glucoseConfidence: glucoseConfidence,
             eventConfidence: eventConfidence,
             blockers: blockers,
-            warnings: warnings.map(\.message)
+            warnings: warnings.map(\.message),
+            clockValidated: quality.timeAxisClockIsValid,
+            eventIssuesLocalized: quality.completeEventStemCount == therapyEvents.count
+                && quality.unknownEventAmountCount == therapyEvents.filter { $0.amount.value == nil }.count
+                && therapyEvents.allSatisfy(\.isCompleteStem)
         )
 
         return AnalysisRun(
