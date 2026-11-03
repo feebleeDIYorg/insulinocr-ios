@@ -13,7 +13,7 @@ public struct NativeAnalysisConfiguration: Sendable, Equatable {
     public let maximumTimeResidualMinutes: Double
 
     public init(
-        algorithmVersion: String = "native-1.10.0",
+        algorithmVersion: String = "native-1.11.0",
         minimumBasalCoverage: Double = 0.99,
         maximumTimeResidualMinutes: Double = 1
     ) {
@@ -98,6 +98,8 @@ public actor NativeAnalysisEngine: AnalysisEngine {
             observations: rawObservations
         )
         let frame = layoutEvidence.plotFrame
+        let observedFrame = OCRNormalizedRect(x: frame.minX, y: frame.minY,
+            width: layoutEvidence.dataRightEdgeX - frame.minX, height: frame.height)
 
         // Isolate tick labels from rotated axis titles and from tick strokes.
         // Vision otherwise prioritizes the title or reads a tick as a minus.
@@ -145,11 +147,11 @@ public actor NativeAnalysisEngine: AnalysisEngine {
         }
 
         latestObservations = rawObservations
-        let stems = OCREventStemDetector.detect(image: pixelImage, plotFrame: frame)
+        let stems = OCREventStemDetector.detect(image: pixelImage, plotFrame: observedFrame)
         let excludedStemRects = stems.map(\.stemRect)
         let markerCenters = OCRGlucoseExtractor.isolatedMarkerCentersX(
             image: pixelImage,
-            plotFrame: frame,
+            plotFrame: observedFrame,
             excludedRects: excludedStemRects
         )
         let timeAnchors = OCRObservationInterpreter.timeAnchors(
@@ -169,7 +171,10 @@ public actor NativeAnalysisEngine: AnalysisEngine {
 
         let visibleHours = timeCalibration.slope
             * (layoutEvidence.dataRightEdgeX - frame.minX) / 60
-        guard (0.95...48.5).contains(visibleHours) else {
+        let supportedPartialWindow = layoutEvidence.captureMarker != nil
+            && visibleHours > 0 && visibleHours < 0.95
+            && (0.95...48.5).contains(timeCalibration.slope * frame.width / 60)
+        guard (0.95...48.5).contains(visibleHours) || supportedPartialWindow else {
             throw OCRAnalysisFailure.unsupportedLayout(
                 reason: "The visible window is outside the supported 1–48 hour range."
             )
@@ -179,7 +184,8 @@ public actor NativeAnalysisEngine: AnalysisEngine {
             plotFrame: frame,
             dataRightEdgeX: layoutEvidence.dataRightEdgeX,
             estimatedVisibleHours: visibleHours,
-            confidence: layoutEvidence.confidence
+            confidence: layoutEvidence.confidence,
+            captureMarkerBounds: layoutEvidence.captureMarker
         )
 
         let leftAxisRange = 0...frame.minX
@@ -205,15 +211,18 @@ public actor NativeAnalysisEngine: AnalysisEngine {
             anchors: OCRLayoutDetector.alignNumericAnchors(basalAnchors, image: pixelImage, frame: frame, kind: .basalRate),
             allowedResidual: 0.08
         )
-        let timeline: OCRTimelineMapper
+        var timeline: OCRTimelineMapper
         let clockFailureReason: String?
         do {
             guard let timeZone = TimeZone(identifier: request.timeZoneIdentifier) else {
                 throw OCRAnalysisFailure.invalidTimeAxis(reason: "Unknown capture time zone.")
             }
             timeline = try OCRTimelineMapper.clockAligned(calibration: timeCalibration,
-                plotStartX: frame.minX, referenceX: layout.dataRightEdgeX,
+                plotStartX: frame.minX, referenceX: layout.captureMarkerBounds?.maxX ?? layout.dataRightEdgeX,
                 capturedAt: capturedAt, timeZone: timeZone)
+            if layout.captureMarkerBounds != nil, abs(timeline.referenceDate.timeIntervalSince(capturedAt)) > 60 {
+                throw OCRAnalysisFailure.invalidTimeAxis(reason: "Capture marker disagrees with capture clock by more than one minute.")
+            }
             clockFailureReason = nil
         } catch OCRAnalysisFailure.invalidTimeAxis(let reason) {
             // Retain measured geometry/OCR for QA. Relative dates are explicitly
@@ -222,8 +231,10 @@ public actor NativeAnalysisEngine: AnalysisEngine {
                 referenceX: layout.dataRightEdgeX, referenceDate: capturedAt)
             clockFailureReason = reason
         }
-        // The chart frame includes the right-hand status strip. Only the
-        // observed data interval ends at its independently calibrated clock.
+        // The capture marker is a zero-duration boundary, not missing therapy.
+        // Its painted stroke and the future panel never enter pixel extraction.
+        // Only a path touching its past edge may end at capture time, and only
+        // when the independent clock agrees within one minute.
         let dataFrame = OCRNormalizedRect(
             x: frame.minX, y: frame.minY,
             width: layout.dataRightEdgeX - frame.minX, height: frame.height
@@ -234,7 +245,8 @@ public actor NativeAnalysisEngine: AnalysisEngine {
             plotFrame: dataFrame,
             excludedRects: excludedStemRects,
             timeline: timeline,
-            rateCalibration: basalCalibration
+            rateCalibration: basalCalibration,
+            captureMarkerEndDate: clockFailureReason == nil && layout.captureMarkerBounds != nil ? capturedAt : nil
         )
         let glucose = OCRGlucoseExtractor.extract(
             image: pixelImage,
@@ -248,28 +260,35 @@ public actor NativeAnalysisEngine: AnalysisEngine {
         var therapyEvents: [OCRTherapyEvent] = []
         for stem in stems where stem.isComplete {
             try Task.checkCancellation()
-            let pillObservations = try recognizeText(
+            let clippedPill = stem.pillRect.maxX > layout.dataRightEdgeX
+            let pillRegion = OCRNormalizedRect(x: stem.pillRect.minX, y: stem.pillRect.minY,
+                width: max(0, min(stem.pillRect.maxX, layout.dataRightEdgeX) - stem.pillRect.minX),
+                height: stem.pillRect.height)
+            // A clipped multi-digit label can look like a confident smaller
+            // amount. Keep its complete stem unknown rather than parsing it.
+            let pillObservations: [OCRRawTextObservation] = clippedPill ? [] : try recognizeText(
                 in: cgImage,
-                region: stem.pillRect,
+                region: pillRegion,
                 kind: .eventPill,
                 minimumTextHeight: 0.02
             )
             rawObservations += pillObservations
             latestObservations = rawObservations
-            let evidence = pillObservations + OCRObservationInterpreter.eventTextEvidence(
+            let evidence: [OCRRawTextObservation] = clippedPill ? [] : (pillObservations + OCRObservationInterpreter.eventTextEvidence(
                 from: rawObservations, for: stem, among: stems
-            )
+            )).filter { $0.boundingBox.maxX <= layout.dataRightEdgeX }
             var candidates = evidence
                 .flatMap(\.candidates)
                 .sorted { $0.confidence > $1.confidence }
             var evidenceIDs = evidence.map(\.id)
             var parsed = OCRTextParser.amount(from: candidates, expectedKind: stem.kind)
-            if parsed.0.value == nil {
-                let enhanced = try recognizeText(in: cgImage, region: stem.pillRect,
+            if parsed.0.value == nil && !clippedPill {
+                let enhanced = try recognizeText(in: cgImage, region: pillRegion,
                     kind: .eventPill, minimumTextHeight: 0.02, enhancePill: true)
                 rawObservations += enhanced
                 latestObservations = rawObservations
                 let usable = enhanced.filter {
+                    $0.boundingBox.maxX <= layout.dataRightEdgeX &&
                     Self.isUnclippedPillText($0.boundingBox, in: stem.pillRect,
                         imageWidth: cgImage.width, imageHeight: cgImage.height)
                 }
@@ -403,7 +422,7 @@ public actor NativeAnalysisEngine: AnalysisEngine {
             algorithmVersion: configuration.algorithmVersion,
             visionRevision: Int(VNRecognizeTextRequestRevision3),
             capturedAt: capturedAt,
-            timeAxisReferenceDate: clockFailureReason == nil ? timeline.referenceDate : nil,
+            timeAxisReferenceDate: clockFailureReason == nil ? (layout.captureMarkerBounds != nil ? capturedAt : timeline.referenceDate) : nil,
             status: criticalDataComplete ? .complete : .needsReview,
             layout: layout,
             timeCalibration: timeCalibration,
