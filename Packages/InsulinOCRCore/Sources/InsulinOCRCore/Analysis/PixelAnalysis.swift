@@ -593,7 +593,8 @@ enum OCREventStemDetector {
             let bounds = image.pixelRect(for: pill)
             var blue = 0
             for y in bounds.y..<bounds.maxY {
-                for px in bounds.x..<bounds.maxX where image[px, y].isTherapyBlue { blue += 1 }
+                for px in bounds.x..<min(bounds.maxX, Int((frame.maxX * Double(image.width)).rounded(.down)))
+                    where image[px, y].isTherapyBlue { blue += 1 }
             }
             guard blue >= 10 else { continue }
             result.append(OCRDetectedEventStem(kind: .bolus,

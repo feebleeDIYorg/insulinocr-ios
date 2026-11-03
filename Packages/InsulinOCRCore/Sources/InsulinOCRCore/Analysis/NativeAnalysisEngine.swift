@@ -260,17 +260,21 @@ public actor NativeAnalysisEngine: AnalysisEngine {
         var therapyEvents: [OCRTherapyEvent] = []
         for stem in stems where stem.isComplete {
             try Task.checkCancellation()
-            let pillObservations = try recognizeText(
+            let clippedPill = stem.pillRect.maxX > layout.dataRightEdgeX
+            let pillRegion = OCRNormalizedRect(x: stem.pillRect.minX, y: stem.pillRect.minY,
+                width: max(0, min(stem.pillRect.maxX, layout.dataRightEdgeX) - stem.pillRect.minX),
+                height: stem.pillRect.height)
+            // A clipped multi-digit label can look like a confident smaller
+            // amount. Keep its complete stem unknown rather than parsing it.
+            let pillObservations: [OCRRawTextObservation] = clippedPill ? [] : try recognizeText(
                 in: cgImage,
-                region: OCRNormalizedRect(x: stem.pillRect.minX, y: stem.pillRect.minY,
-                    width: max(0, min(stem.pillRect.maxX, layout.dataRightEdgeX) - stem.pillRect.minX),
-                    height: stem.pillRect.height),
+                region: pillRegion,
                 kind: .eventPill,
                 minimumTextHeight: 0.02
             )
             rawObservations += pillObservations
             latestObservations = rawObservations
-            let evidence = (pillObservations + OCRObservationInterpreter.eventTextEvidence(
+            let evidence: [OCRRawTextObservation] = clippedPill ? [] : (pillObservations + OCRObservationInterpreter.eventTextEvidence(
                 from: rawObservations, for: stem, among: stems
             )).filter { $0.boundingBox.maxX <= layout.dataRightEdgeX }
             var candidates = evidence
@@ -278,15 +282,13 @@ public actor NativeAnalysisEngine: AnalysisEngine {
                 .sorted { $0.confidence > $1.confidence }
             var evidenceIDs = evidence.map(\.id)
             var parsed = OCRTextParser.amount(from: candidates, expectedKind: stem.kind)
-            if parsed.0.value == nil {
-                let enhanced = try recognizeText(in: cgImage, region: OCRNormalizedRect(x: stem.pillRect.minX, y: stem.pillRect.minY,
-                    width: max(0, min(stem.pillRect.maxX, layout.dataRightEdgeX) - stem.pillRect.minX),
-                    height: stem.pillRect.height),
+            if parsed.0.value == nil && !clippedPill {
+                let enhanced = try recognizeText(in: cgImage, region: pillRegion,
                     kind: .eventPill, minimumTextHeight: 0.02, enhancePill: true)
                 rawObservations += enhanced
                 latestObservations = rawObservations
                 let usable = enhanced.filter {
-                     $0.boundingBox.maxX <= layout.dataRightEdgeX &&
+                    $0.boundingBox.maxX <= layout.dataRightEdgeX &&
                     Self.isUnclippedPillText($0.boundingBox, in: stem.pillRect,
                         imageWidth: cgImage.width, imageHeight: cgImage.height)
                 }
