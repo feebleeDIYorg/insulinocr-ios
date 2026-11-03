@@ -137,12 +137,14 @@ final class CaseLifecycleIntegrationTests: XCTestCase {
         let isComplete = [computation.current.basalIOB, computation.current.bolusIOB,
             computation.current.totalIOB, computation.current.cob].allSatisfy { $0.value != nil }
         XCTAssertTrue(isComplete)
+        // A saved run can predate the currently installed calculator.
+        let savedModelVersion = "fixture-model/0.0.1"
         let run = ComputationRun(
             caseID: caseID,
             analysisRunID: analysis.id,
             correctionRevisionID: revision.id,
             referenceDate: captureTime,
-            modelVersion: DefaultActivityCalculator.modelVersion,
+            modelVersion: savedModelVersion,
             settings: settings,
             result: computation
         )
@@ -218,6 +220,13 @@ final class CaseLifecycleIntegrationTests: XCTestCase {
             try JSONSerialization.jsonObject(with: Data(contentsOf: manifestURL)) as? [String: Any]
         )
         XCTAssertEqual(manifestObject["schemaVersion"] as? Int, CaseArchiveExporter.schemaVersion)
+        let appMetadata = try XCTUnwrap(manifestObject["app"] as? [String: Any])
+        XCTAssertTrue(Set(appMetadata.keys).isSubset(of: ["version", "build", "gitRevision"]))
+        XCTAssertNotNil(appMetadata["version"] as? String)
+        XCTAssertNotNil(appMetadata["build"] as? String)
+        let versions = try XCTUnwrap(manifestObject["versions"] as? [String: Any])
+        XCTAssertEqual(versions["activityModel"] as? String, savedModelVersion)
+        XCTAssertEqual(snapshot.activeComputation?.id, run.id)
 
         let requiredPaths = [
             "case.json",

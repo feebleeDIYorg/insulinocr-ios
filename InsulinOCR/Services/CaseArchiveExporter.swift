@@ -45,6 +45,7 @@ struct CaseArchiveSnapshot: Sendable {
     let simulations: [VersionedArchivePayload]
     let effectiveData: EffectiveTherapyData?
     let activeAnalysis: AnalysisRun?
+    let activeComputation: ComputationRun?
 
     @MainActor
     static func make(
@@ -124,7 +125,12 @@ struct CaseArchiveSnapshot: Sendable {
                 VersionedArchivePayload(id: $0.id, createdAt: $0.createdAt, sha256: $0.payloadSHA256, data: $0.encodedPayload)
             },
             effectiveData: activeEnvelope?.effectiveData,
-            activeAnalysis: activeAnalysis
+            activeAnalysis: activeAnalysis,
+            activeComputation: activeEnvelope?.run ?? record.activeComputationRunID.flatMap { activeID in
+                computationEntities.first(where: { $0.id == activeID }).flatMap {
+                    try? JSONDecoder.insulinOCR.decode(ComputationRun.self, from: $0.encodedPayload)
+                }
+            }
         )
     }
 }
@@ -139,7 +145,8 @@ actor CaseArchiveExporter: CaseExporter {
 
     private struct Manifest: Codable {
         struct App: Codable {
-            let bundleIdentifier: String
+            // Optional for legacy manifests; new exports omit private build identity.
+            let bundleIdentifier: String?
             let version: String
             let build: String
             let gitRevision: String?
@@ -357,7 +364,7 @@ actor CaseArchiveExporter: CaseExporter {
             schemaVersion: Self.schemaVersion,
             createdAt: .now,
             app: .init(
-                bundleIdentifier: Bundle.main.bundleIdentifier ?? "org.example.insulinocr",
+                bundleIdentifier: nil,
                 version: Bundle.main.object(forInfoDictionaryKey: "CFBundleShortVersionString") as? String ?? "unknown",
                 build: Bundle.main.object(forInfoDictionaryKey: "CFBundleVersion") as? String ?? "unknown",
                 gitRevision: Bundle.main.object(forInfoDictionaryKey: "GitRevision") as? String
@@ -365,7 +372,7 @@ actor CaseArchiveExporter: CaseExporter {
             case: snapshot.metadata,
             versions: .init(
                 analysisAlgorithm: snapshot.activeAnalysis?.algorithmVersion,
-                activityModel: snapshot.effectiveData == nil ? nil : DefaultActivityCalculator.modelVersion,
+                activityModel: snapshot.activeComputation?.modelVersion,
                 visionRevision: snapshot.activeAnalysis?.visionRevision
             ),
             units: .init(

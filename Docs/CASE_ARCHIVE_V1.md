@@ -56,6 +56,15 @@ inferred from an unlisted checksum.
 
 ## Manifest
 
+New exports omit deployment identifiers, including the bundle ID, App Group,
+CloudKit container, Apple team and signing repository. Older v1 manifests may
+contain `app.bundleIdentifier`; readers must tolerate its absence. App version,
+build and optional public source revision remain available for QA.
+
+`versions.activityModel` identifies the active saved computation run, including
+historical runs created by an older app. It is absent when no active run can be
+decoded; the currently installed calculator version is never substituted.
+
 The required top-level shape is:
 
 ```json
@@ -64,7 +73,6 @@ The required top-level shape is:
   "schemaVersion": 1,
   "createdAt": "2026-10-27T12:00:00Z",
   "app": {
-    "bundleIdentifier": "org.example.insulinocr",
     "version": "0.1.0",
     "build": "1",
     "gitRevision": "<40-hex-or-null>"
