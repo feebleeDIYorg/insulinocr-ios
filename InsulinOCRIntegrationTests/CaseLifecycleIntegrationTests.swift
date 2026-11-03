@@ -7,6 +7,52 @@ import ZIPFoundation
 
 @MainActor
 final class CaseLifecycleIntegrationTests: XCTestCase {
+    func testCaptureTimeCorrectionPreservesImportedProvenanceAcrossPersistenceAndExport() async throws {
+        let temporary = FileManager.default.temporaryDirectory.appendingPathComponent(UUID().uuidString)
+        defer { try? FileManager.default.removeItem(at: temporary) }
+        let container = try PersistenceFactory.makeContainer(inMemory: true)
+        let store = ProtectedCaseFileStore(rootOverride: temporary.appendingPathComponent("Cases"))
+        let library = CaseLibraryStore(modelContainer: container, fileStore: store)
+        let queue = AppGroupImportQueue(queueRootOverride: temporary.appendingPathComponent("Queue"))
+        let image = try XCTUnwrap(Data(base64Encoded: Self.onePixelPNG))
+        let importedTime = Date(timeIntervalSinceReferenceDate: 800_000_000.1234567)
+        _ = try await queue.enqueue(imageData: image, originalFilename: "synthetic.png",
+            uniformTypeIdentifier: "public.png", captureTime: importedTime, captureTimeSource: .importTime)
+        let pending = try await queue.pendingImports()
+        let imported = try await library.ingest(try XCTUnwrap(pending.first))
+        let correctedTime = importedTime.addingTimeInterval(86_400)
+        try library.updateCaptureTime(caseID: imported.caseID, captureTime: correctedTime)
+
+        let reopened = CaseLibraryStore(modelContainer: container, fileStore: store)
+        let snapshot = try await CaseArchiveSnapshot.make(caseID: imported.caseID, library: reopened, fileStore: store)
+        XCTAssertEqual(snapshot.metadata.captureTime, correctedTime)
+        XCTAssertEqual(snapshot.metadata.captureTimeSource, StoredCaptureTimeSource.userCorrection.rawValue)
+        XCTAssertEqual(snapshot.screenshot.captureTime, importedTime)
+        XCTAssertEqual(snapshot.screenshot.captureTimeSource, StoredCaptureTimeSource.importTime.rawValue)
+        XCTAssertNotNil(snapshot.metadata.createdAt)
+        XCTAssertNotNil(snapshot.metadata.updatedAt)
+        XCTAssertNotNil(snapshot.screenshot.createdAt)
+        let cloud = try await reopened.cloudArchive(caseID: imported.caseID)
+        XCTAssertEqual(cloud.manifest.captureTime, correctedTime)
+        XCTAssertEqual(cloud.manifest.screenshot?.captureTime, importedTime)
+
+        let zip = try await CaseArchiveExporter().export(snapshot)
+        defer { try? FileManager.default.removeItem(at: zip) }
+        let expanded = temporary.appendingPathComponent("Expanded")
+        try FileManager.default.unzipItem(at: zip, to: expanded)
+        let root = expanded.appendingPathComponent("CaseArchive-v1")
+        let data = try Data(contentsOf: root.appendingPathComponent("screenshot.json"))
+        let exported = try JSONDecoder.insulinOCR.decode(CaseArchiveSnapshot.Screenshot.self, from: data)
+        XCTAssertEqual(exported.captureTime, importedTime)
+        XCTAssertEqual(exported.captureTimeSource, StoredCaptureTimeSource.importTime.rawValue)
+        var legacy = try XCTUnwrap(JSONSerialization.jsonObject(with: data) as? [String: Any])
+        for key in ["captureTime", "captureTimeSource", "createdAt", "layoutProfile"] { legacy.removeValue(forKey: key) }
+        let old = try JSONDecoder.insulinOCR.decode(CaseArchiveSnapshot.Screenshot.self,
+            from: JSONSerialization.data(withJSONObject: legacy))
+        XCTAssertNil(old.captureTime)
+        XCTAssertNil(old.captureTimeSource)
+    }
+
     func testFailedCalibrationExportsPartialOCRWithoutNumericOrCalibrationData() async throws {
         let temporary = FileManager.default.temporaryDirectory.appendingPathComponent(UUID().uuidString)
         defer { try? FileManager.default.removeItem(at: temporary) }
