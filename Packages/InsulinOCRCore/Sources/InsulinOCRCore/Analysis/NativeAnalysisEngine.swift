@@ -13,7 +13,7 @@ public struct NativeAnalysisConfiguration: Sendable, Equatable {
     public let maximumTimeResidualMinutes: Double
 
     public init(
-        algorithmVersion: String = "native-1.9.0",
+        algorithmVersion: String = "native-1.10.0",
         minimumBasalCoverage: Double = 0.99,
         maximumTimeResidualMinutes: Double = 1
     ) {

@@ -223,6 +223,31 @@ final class AnalysisPipelineTests: XCTestCase {
         XCTAssertNil(OCRLayoutDetector.futurePanelBoundary(image: noFuture, frame: frame))
     }
 
+    func testNarrowFuturePanelUsesDisplayScaleAndDoesNotMergeGridlinesIntoPanelEvidence() throws {
+        let width = 1_000, height = 500
+        let frame = OCRNormalizedRect(x: 0.1, y: 0.2, width: 0.8, height: 0.6)
+        func image(columns: [Range<Int>], gridline: Range<Int>? = nil) -> OCRPixelImage {
+            var bytes = [UInt8](repeating: 255, count: width * height * 4)
+            for y in 100..<400 {
+                for range in columns {
+                    for x in range {
+                        let value: UInt8 = gridline?.contains(x) == true ? 150 : 211
+                        for channel in 0..<3 { bytes[(y * width + x) * 4 + channel] = value }
+                    }
+                }
+            }
+            return OCRPixelImage(width: width, height: height, rgba: bytes)
+        }
+        // This 16-pixel panel is narrower than 2.5% of the chart, yet has
+        // independent panel evidence on both sides of its crossing gridline.
+        XCTAssertEqual(try XCTUnwrap(OCRLayoutDetector.futurePanelBoundary(
+            image: image(columns: [870..<886], gridline: 877..<880), frame: frame)), 0.87, accuracy: 1e-9)
+        XCTAssertNil(OCRLayoutDetector.futurePanelBoundary(
+            image: image(columns: [885..<888, 892..<895]), frame: frame))
+        XCTAssertNil(OCRLayoutDetector.futurePanelBoundary(
+            image: image(columns: [889..<895]), frame: frame))
+    }
+
     func testContradictoryEventAmountsOrKindsRemainUnknown() {
         for texts in [["23 g", "235 g"], ["2 IE", "2 g"]] {
             let parsed = OCRTextParser.amount(

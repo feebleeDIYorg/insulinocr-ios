@@ -11,6 +11,19 @@ Dir.mktmpdir do |directory|
     raise "Completion missing" unless InsulinOCRDeliveryStatus.read(path) == {"stage" => "apple_key", "code" => "completed"}
     raise "Unsafe file permissions" unless File.stat(path).mode & 0o777 == 0o600
     checks += 1
+    {"Configured TestFlight app is missing synthetic-private-app" => "testflight_app_missing",
+     "One internal TestFlight group is required synthetic-private-group" => "testflight_internal_group_missing",
+     "One valid existing build of the current version is required synthetic-private-id" => "testflight_existing_build_missing",
+     "Could not set changelog: synthetic-private-notes" => "testflight_notes_failed",
+     "Forbidden synthetic-private-key" => "testflight_api_access_denied"}.each do |message, code|
+      begin
+        InsulinOCRDeliveryStatus.around("distribution") { raise message }
+      rescue RuntimeError
+      end
+      raise "Wrong fixed TestFlight reason" unless InsulinOCRDeliveryStatus.read(path) == {"stage" => "distribution", "code" => code}
+      raise "Private TestFlight error leaked" if File.read(path).include?("synthetic-private")
+      checks += 1
+    end
     {"Couldn't decrypt the repo synthetic-private-password" => "match_decryption_failed",
      "No matching provisioning profiles synthetic-private-app" => "match_profile_missing",
      "Unauthorized synthetic-private-key" => "match_apple_auth_failed",
