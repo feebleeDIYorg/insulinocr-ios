@@ -111,19 +111,22 @@ public struct OCRDetectedLayout: Codable, Sendable, Equatable {
     public let dataRightEdgeX: Double
     public let estimatedVisibleHours: Double
     public let confidence: Double
+    public let captureMarkerBounds: OCRNormalizedRect?
 
     public init(
         profile: OCRLayoutProfile,
         plotFrame: OCRNormalizedRect,
         dataRightEdgeX: Double,
         estimatedVisibleHours: Double,
-        confidence: Double
+        confidence: Double,
+        captureMarkerBounds: OCRNormalizedRect? = nil
     ) {
         self.profile = profile
         self.plotFrame = plotFrame
         self.dataRightEdgeX = dataRightEdgeX
         self.estimatedVisibleHours = estimatedVisibleHours
         self.confidence = confidence
+        self.captureMarkerBounds = captureMarkerBounds
     }
 }
 

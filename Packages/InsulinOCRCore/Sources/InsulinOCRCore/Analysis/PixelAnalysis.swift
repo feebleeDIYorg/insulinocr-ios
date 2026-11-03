@@ -262,7 +262,7 @@ enum OCRLayoutDetector {
     static func detect(
         image: OCRPixelImage,
         observations: [OCRRawTextObservation]
-    ) throws -> (plotFrame: OCRNormalizedRect, dataRightEdgeX: Double, confidence: Double) {
+    ) throws -> (plotFrame: OCRNormalizedRect, dataRightEdgeX: Double, confidence: Double, captureMarker: OCRNormalizedRect?) {
         guard image.width > image.height else {
             throw OCRAnalysisFailure.unsupportedLayout(reason: "The screenshot is not landscape.")
         }
@@ -307,12 +307,48 @@ enum OCRLayoutDetector {
 
         let normalizedRight = Double(rightMostX) / Double(image.width)
         let minimumUsableRight = frame.minX + frame.width * 0.55
+        let marker = try captureMarker(image: image, frame: frame)
         let observedRight = futurePanelBoundary(image: image, frame: frame) ?? normalizedRight
-        let dataRightEdge = min(frame.maxX, max(minimumUsableRight, observedRight))
+        let dataRightEdge = marker?.minX ?? min(frame.maxX, max(minimumUsableRight, observedRight))
         let confidence = min(1, 0.55 + min(0.2, Double(anchors.count) * 0.04)
             + min(0.15, Double(blueCount) / 2_000)
             + min(0.1, Double(darkCount) / 4_000))
-        return (frame, dataRightEdge, confidence)
+        return (frame, dataRightEdge, confidence, marker)
+    }
+
+    /// A solid neutral rule with historical white basal background on its left
+    /// and the shaded future panel on its right. Gridlines lack this transition.
+    static func captureMarker(image: OCRPixelImage, frame: OCRNormalizedRect) throws -> OCRNormalizedRect? {
+        let b = image.pixelRect(for: frame)
+        guard b.width > 12, b.height > 20 else { return nil }
+        func neutral(_ c: OCRPixelColor) -> Bool {
+            abs(Int(c.red) - Int(c.green)) <= 8 && abs(Int(c.red) - Int(c.blue)) <= 8
+        }
+        func fraction(_ x: Int, lower: Bool, matches: (OCRPixelColor) -> Bool) -> Double {
+            let start = lower ? b.y + b.height * 2 / 3 : b.y + 3
+            let ys = stride(from: start, to: b.maxY - 3, by: 3)
+            var count = 0, total = 0
+            for y in ys { total += 1; if matches(image[x, y]) { count += 1 } }
+            return Double(count) / Double(max(1, total))
+        }
+        var candidates: [OCRNormalizedRect] = []
+        var x = b.x + 4
+        while x < b.maxX - 4 {
+            let isRule: (OCRPixelColor) -> Bool = { neutral($0) && (100...190).contains(Int($0.red)) }
+            guard fraction(x, lower: false, matches: isRule) >= 0.85 else { x += 1; continue }
+            let start = x
+            while x < b.maxX - 3 && fraction(x, lower: false, matches: isRule) >= 0.85 { x += 1 }
+            guard (2...max(6, image.width / 150)).contains(x - start), start >= b.x + 3,
+                  fraction(start - 2, lower: true, matches: { neutral($0) && $0.red >= 235 }) >= 0.8,
+                  fraction(x + 1, lower: true, matches: { neutral($0) && (190...225).contains(Int($0.red)) }) >= 0.8
+            else { continue }
+            candidates.append(image.normalizedRect(for: .init(x: start, y: b.y, width: x - start, height: b.height)))
+        }
+        // Conflicting boundaries are not resolved by guessing a later time.
+        guard candidates.count <= 1 else {
+            throw OCRAnalysisFailure.unsupportedLayout(reason: "Multiple capture boundaries require review.")
+        }
+        return candidates.first
     }
 
     static func futurePanelBoundary(image: OCRPixelImage, frame: OCRNormalizedRect) -> Double? {
@@ -604,7 +640,8 @@ enum OCRBasalPathExtractor {
         plotFrame: OCRNormalizedRect,
         excludedRects: [OCRNormalizedRect],
         timeline: OCRTimelineMapper,
-        rateCalibration: OCRAxisCalibration?
+        rateCalibration: OCRAxisCalibration?,
+        captureMarkerEndDate: Date? = nil
     ) -> OCRBasalExtraction {
         let crop = image.pixelRect(for: plotFrame)
         var mask = OCRBinaryMask(width: crop.width, height: crop.height)
@@ -687,7 +724,9 @@ enum OCRBasalPathExtractor {
             let endX = Double(crop.x + run.end) / Double(image.width)
             let normalizedY = Double(crop.y) / Double(image.height) + run.y / Double(image.height)
             let startDate = timeline.date(atX: startX)
-            let endDate = timeline.date(atX: endX)
+            let markerEnd = run.end == crop.width ? captureMarkerEndDate : nil
+            let reachesCaptureMarker = markerEnd != nil
+            let endDate = markerEnd ?? timeline.date(atX: endX)
             guard endDate > startDate else { return nil }
             let rawRate = rateCalibration?.value(at: normalizedY)
             // A fitted zero ordinate can round a few ulps below zero. Do not
@@ -702,7 +741,8 @@ enum OCRBasalPathExtractor {
                 confidence: min(1, 0.55 + coverage * 0.45),
                 provenance: OCRProvenance(
                     kind: .calibratedPixelGeometry,
-                    note: rate == nil ? "Basal geometry found, but rate-axis calibration is unavailable." : nil
+                    note: rate == nil ? "Basal geometry found, but rate-axis calibration is unavailable." :
+                        (reachesCaptureMarker ? "Observed basal path touches capture marker; its endpoint is capture time. Marker stroke and future panel are excluded." : nil)
                 )
             )
         }
