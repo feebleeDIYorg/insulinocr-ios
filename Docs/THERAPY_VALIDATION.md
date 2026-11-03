@@ -1,9 +1,12 @@
 # Therapy model validation
 
-The current core suite contains 62 tests. Native Vision failure-path checks run in
+The core suite covers numerical models and data quality. Native Vision failure-path checks run in
 the iOS app test target on the shipping platform. `TherapyReferenceMatrixTests`
 adds an independent insulin oracle and broadens the numerical parameter matrix.
 This is numerical model evidence, not clinical validation or OCR acceptance.
+
+The [frozen-time quality policy](ACTIVITY_QUALITY.md) separately documents when
+historical uncertainty can cease to block a current activity calculation.
 
 | Check | Matrix | Absolute tolerance |
 |---|---|---|

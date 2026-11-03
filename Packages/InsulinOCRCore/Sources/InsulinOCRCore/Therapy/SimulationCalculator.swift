@@ -21,7 +21,9 @@ public enum SimulationCalculator {
             unresolvedIssues: data.unresolvedIssues,
             sourceAnalysisRunID: data.sourceAnalysisRunID,
             sourceCorrectionRevisionID: data.sourceCorrectionRevisionID,
-            observedHistoryMinutes: data.observedHistoryMinutes
+            observedHistoryMinutes: data.observedHistoryMinutes,
+            inactiveUncertainObservationIDs: data.inactiveUncertainObservationIDs,
+            activityAssessment: data.activityAssessment
         )
     }
 }

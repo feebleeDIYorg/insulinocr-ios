@@ -15,8 +15,16 @@ public struct DefaultEffectiveDataReducer: EffectiveDataReducer {
         try reduceImpl(analysisRun: analysisRun, revisions: revisions, window: basalCoverageWindow)
     }
 
+    public func reduce(analysisRun: AnalysisRun, revisions: [CorrectionRevision],
+                       referenceDate: Date, settings: TherapySettings) throws -> EffectiveTherapyData {
+        guard referenceDate.timeIntervalSinceReferenceDate.isFinite else { throw EffectiveDataError.invalidReferenceDate }
+        return try reduceImpl(analysisRun: analysisRun, revisions: revisions,
+            window: DateInterval(start: referenceDate.addingTimeInterval(-Double(settings.diaMinutes) * 60), end: referenceDate),
+            activity: (referenceDate, settings))
+    }
+
     private func reduceImpl(analysisRun: AnalysisRun, revisions: [CorrectionRevision],
-                            window: DateInterval?) throws -> EffectiveTherapyData {
+                            window: DateInterval?, activity: (date: Date, settings: TherapySettings)? = nil) throws -> EffectiveTherapyData {
         var explicitlyReviewedBasal = false
         var observations = Dictionary(uniqueKeysWithValues: analysisRun.observations.map { ($0.id, $0) })
         let applicableRevisions = revisions.sorted {
@@ -59,6 +67,27 @@ public struct DefaultEffectiveDataReducer: EffectiveDataReducer {
         var carbohydrates: [CarbohydrateEvent] = []
         var glucoseSamples: [GlucoseSample] = []
         var issues = issues(from: analysisRun)
+        var inactiveIDs: [UUID] = []
+        let calibration = analysisRun.calibration
+        let trustworthyClock = analysisRun.quality.clockValidated == true && !issues.contains(.invalidTimeAxis)
+            && analysisRun.quality.timeAxisConfidence.isFinite && (0...1).contains(analysisRun.quality.timeAxisConfidence)
+            && analysisRun.quality.timeAxisConfidence > 0
+            && calibration.timeResidualMinutes.isFinite && (0...1).contains(calibration.timeResidualMinutes)
+            && calibration.timeStart.timeIntervalSinceReferenceDate.isFinite
+            && calibration.timeEnd.timeIntervalSinceReferenceDate.isFinite
+            && calibration.timeStart < calibration.timeEnd
+        func isInactive(_ observation: RawObservation, horizonMinutes: Int, endDate: Date? = nil) -> Bool {
+            guard let activity, trustworthyClock else { return false }
+            guard observation.kind == .basalRate || analysisRun.quality.eventIssuesLocalized == true else { return false }
+            let date = endDate ?? observation.startDate
+            guard date.timeIntervalSinceReferenceDate.isFinite,
+                  observation.confidence.geometry.isFinite, (0.99...1).contains(observation.confidence.geometry),
+                  observation.startDate >= calibration.timeStart,
+                  date <= calibration.timeEnd else { return false }
+            // Retain both acceptance bounds: 2.5 minutes for event placement
+            // and one minute for the calibrated clock.
+            return date < activity.date.addingTimeInterval(-(Double(horizonMinutes) + 3.5) * 60)
+        }
 
         for observation in observations.values {
             switch observation.kind {
@@ -70,6 +99,11 @@ public struct DefaultEffectiveDataReducer: EffectiveDataReducer {
                       observation.unit == .unitsPerHour,
                       let endDate = observation.endDate,
                       endDate > observation.startDate else {
+                    if let activity, let end = observation.endDate, end > observation.startDate,
+                       isInactive(observation, horizonMinutes: activity.settings.diaMinutes, endDate: end) {
+                        inactiveIDs.append(observation.id)
+                        continue
+                    }
                     invalidBasalObservation = true
                     issues.insert(.incompleteBasalPath)
                     continue
@@ -90,6 +124,12 @@ public struct DefaultEffectiveDataReducer: EffectiveDataReducer {
                       units.isFinite,
                       units >= 0,
                       observation.unit == .insulinUnits else {
+                    if let activity, isInactive(observation, horizonMinutes: observation.unit == .insulinUnits
+                        ? activity.settings.diaMinutes
+                        : max(activity.settings.diaMinutes, activity.settings.carbAbsorptionMinutes + Int(CarbohydrateAbsorptionModel.delayMinutes))) {
+                        inactiveIDs.append(observation.id)
+                        continue
+                    }
                     issues.insert(.unknownBolusAmount)
                     continue
                 }
@@ -108,6 +148,12 @@ public struct DefaultEffectiveDataReducer: EffectiveDataReducer {
                       grams.isFinite,
                       grams >= 0,
                       observation.unit == .grams else {
+                    if let activity, isInactive(observation, horizonMinutes: observation.unit == .grams
+                        ? activity.settings.carbAbsorptionMinutes + Int(CarbohydrateAbsorptionModel.delayMinutes)
+                        : max(activity.settings.diaMinutes, activity.settings.carbAbsorptionMinutes + Int(CarbohydrateAbsorptionModel.delayMinutes))) {
+                        inactiveIDs.append(observation.id)
+                        continue
+                    }
                     issues.insert(.unknownCarbohydrateAmount)
                     continue
                 }
@@ -144,11 +190,16 @@ public struct DefaultEffectiveDataReducer: EffectiveDataReducer {
                 )
 
             case .eventStem:
+                if let activity, isInactive(observation,
+                    horizonMinutes: max(activity.settings.diaMinutes, activity.settings.carbAbsorptionMinutes + Int(CarbohydrateAbsorptionModel.delayMinutes))) {
+                    inactiveIDs.append(observation.id)
+                    continue
+                }
                 issues.insert(.unclassifiedEvent)
             }
         }
 
-        if let window, explicitlyReviewedBasal, !invalidBasalObservation,
+        if let window, (explicitlyReviewedBasal || (activity != nil && trustworthyClock)), !invalidBasalObservation,
            !issues.contains(.invalidTimeAxis), !issues.contains(.invalidBasalAxis),
            BasalCoverageValidator.isComplete(basalSegments, in: window) {
             // Resolve only the effective coverage issue; immutable raw quality stays intact.
@@ -163,7 +214,9 @@ public struct DefaultEffectiveDataReducer: EffectiveDataReducer {
             unresolvedIssues: issues,
             sourceAnalysisRunID: analysisRun.id,
             sourceCorrectionRevisionID: applicableRevisions.last?.id,
-            observedHistoryMinutes: analysisRun.calibration.timeEnd.timeIntervalSince(analysisRun.calibration.timeStart) / 60
+            observedHistoryMinutes: analysisRun.calibration.timeEnd.timeIntervalSince(analysisRun.calibration.timeStart) / 60,
+            inactiveUncertainObservationIDs: activity == nil ? nil : inactiveIDs.sorted { $0.uuidString < $1.uuidString },
+            activityAssessment: activity.map { ActivityAssessment(referenceDate: $0.date, settings: $0.settings) }
         )
     }
 
@@ -179,6 +232,7 @@ public struct DefaultEffectiveDataReducer: EffectiveDataReducer {
             }
         }
         var result = Set<CriticalDataIssue>()
+        if quality.clockValidated == false { result.insert(.invalidTimeAxis) }
         if quality.basalCoverage < 0.99 {
             result.insert(.incompleteBasalPath)
         }
@@ -191,15 +245,15 @@ public struct DefaultEffectiveDataReducer: EffectiveDataReducer {
             // overlay. Immutable raw flags must not undo a confirmed correction.
             // An unlocalized quality warning still blocks: no data is invented.
             case .unknownInsulinAmount:
-                if !hasLocatedAmountIssue(kind: .bolus, unit: .insulinUnits) {
+                if quality.eventIssuesLocalized == false || !hasLocatedAmountIssue(kind: .bolus, unit: .insulinUnits) {
                     result.insert(.unknownBolusAmount)
                 }
             case .unknownCarbohydrateAmount:
-                if !hasLocatedAmountIssue(kind: .carbohydrate, unit: .grams) {
+                if quality.eventIssuesLocalized == false || !hasLocatedAmountIssue(kind: .carbohydrate, unit: .grams) {
                     result.insert(.unknownCarbohydrateAmount)
                 }
             case .unclassifiedEvent:
-                if !analysisRun.observations.contains(where: { $0.kind == .eventStem }) {
+                if quality.eventIssuesLocalized == false || !analysisRun.observations.contains(where: { $0.kind == .eventStem }) {
                     result.insert(.unclassifiedEvent)
                 }
             case .corruptAsset:
