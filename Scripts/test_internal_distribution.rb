@@ -25,6 +25,8 @@ class SyntheticDistributionBuild
   end
   def add_beta_groups(beta_groups:); @assigned_groups = beta_groups; end
   def get_beta_build_localizations; []; end
+  def build_beta_detail; Object.new; end
+  def pre_release_version; Object.new; end
 end
 
 checks = 0
@@ -58,5 +60,38 @@ raise "Pinned first-build behavior changed" unless writes.empty?
 manager.send(:update_localized_build_review, build, options[:localized_build_info])
 raise "First build notes not created" unless writes.length == 1 && writes[0][:localization].nil? && writes[0][:locale] == :"de-DE"
 raise "QA limitation missing" unless writes[0][:info][:whats_new].start_with?(InsulinOCRSetupPolicy::QA_NOTICE)
+checks += 1
+
+# Follow Pilot's real distribute-only lookup path with no IPA or package.
+# A missing platform would ask for terminal input instead of reaching Build.all.
+offline = Pilot::BuildManager.new
+offline.define_singleton_method(:login) {}
+offline.define_singleton_method(:app) { OpenStruct.new(id: "synthetic-app") }
+metadata_reached = false
+offline.define_singleton_method(:update_beta_app_meta) { |_options, _build| metadata_reached = true }
+without_archive = FastlaneCore::Configuration.create(Pilot::Options.available_options,
+  InsulinOCRSetupPolicy.internal_distribution_options("qa_distribute", "Synthetic QA notes").merge(
+    app_identifier: "org.example.insulinocr", app_version: "0.1.0", build_number: "1",
+    ipa: nil, pkg: nil, skip_submission: true))
+raise "Regression requires no archive" if without_archive[:ipa] || without_archive[:pkg]
+original_all = Spaceship::ConnectAPI::Build.method(:all)
+ui_singleton = FastlaneCore::UI.singleton_class
+had_input = ui_singleton.instance_methods(false).include?(:input)
+original_input = FastlaneCore::UI.method(:input) if had_input
+query = nil
+begin
+  FastlaneCore::UI.define_singleton_method(:input) { |*_args| raise "Unexpected interactive platform prompt" }
+  Spaceship::ConnectAPI::Build.define_singleton_method(:all) { |**arguments| query = arguments; [build] }
+  offline.distribute(without_archive)
+  raise "Distribute-only platform lookup failed" unless query && query[:platform] == "IOS" &&
+    query[:build_number] == "1" && metadata_reached
+ensure
+  Spaceship::ConnectAPI::Build.define_singleton_method(:all, original_all)
+  if had_input
+    FastlaneCore::UI.define_singleton_method(:input, original_input)
+  else
+    ui_singleton.remove_method(:input)
+  end
+end
 checks += 1
 puts "Internal distribution: #{checks} pinned-Pilot regressions passed (synthetic; no network)."
