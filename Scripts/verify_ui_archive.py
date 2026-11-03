@@ -47,6 +47,11 @@ def verify(path):
 
         manifest = document("manifest.json")
         require((manifest["schemaName"], manifest["schemaVersion"]) == ("CaseArchive", 1), "Wrong schema")
+        app_metadata = manifest["app"]
+        require(set(app_metadata) <= {"version", "build", "gitRevision"},
+                "Export contains deployment identity metadata")
+        require(all(isinstance(app_metadata.get(key), str) and app_metadata[key]
+                    for key in ("version", "build")), "Missing app version/build")
         require(manifest["screenshot"]["sha256"] == fixture_hash, "Export is not the public synthetic fixture")
         require(read("assets/original.png") == fixture, "Original image bytes changed during sharing")
         require((manifest["screenshot"]["pixelWidth"], manifest["screenshot"]["pixelHeight"])
@@ -95,6 +100,9 @@ def verify(path):
 
         computations = {row["run"]["id"]: row for name in indexed if name.startswith("computations/")
                         for row in [document(name)]}
+        require(manifest["versions"].get("activityModel")
+                == computations[active["computationRunID"]]["run"]["modelVersion"],
+                "Manifest does not identify the saved computation model")
         corrections = [document(name) for name in indexed if name.startswith("corrections/")]
         require(len(computations) >= 4 and len(corrections) >= 3, "Correction history is incomplete")
         require(all(row["run"]["caseID"] == metadata["id"] for row in computations.values())
