@@ -42,7 +42,8 @@ module InsulinOCRSetupPolicy
   end
 
   def self.internal_distribution_options(mode, notes)
-    {groups: ["InsulinOCR Internal"], distribute_external: false,
+    # Metadata-only distribution has no IPA from which Pilot can infer its platform.
+    {app_platform: "ios", groups: ["InsulinOCR Internal"], distribute_external: false,
       submit_beta_review: false, notify_external_testers: false,
       localized_build_info: {"de-DE" => {whats_new: release_notes(mode, notes)}}}
   end
