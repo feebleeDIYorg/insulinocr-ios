@@ -20,6 +20,9 @@ final class CaptureMarkerTests: XCTestCase {
         }
         // Future delivery is deliberately a very different rate.
         for x in (marker+6)..<900 { for y in 300..<310 { paint(x,y,(10,80,220)) } }
+        for x in (marker+45)..<(marker+58) {
+            for y in 180..<193 { paint(x,y,(0,0,0)) }
+        }
         // A future event stem must not become a past unknown amount.
         for x in (marker+30)..<(marker+34) { for y in 25..<70 { paint(x,y,(0,0,0)) } }
         return .init(width: width, height: height, rgba: bytes)
@@ -38,6 +41,11 @@ final class CaptureMarkerTests: XCTestCase {
             slope: 360, intercept: 0, maximumResidual: 0, anchors: [])
         let rate = OCRAxisCalibration(kind: .basalRate, source: .numericAxisAnchors,
             slope: -10, intercept: 10, maximumResidual: 0, anchors: [])
+        let glucose = OCRGlucoseExtractor.extract(image: pixels, plotFrame: past,
+            excludedRects: [], timeline: .init(calibration: time, referenceX: marker.maxX,
+                referenceDate: capture.addingTimeInterval(-30)), glucoseCalibration: nil,
+            visibleMinutes: 300)
+        XCTAssertTrue(glucose.samples.isEmpty)
         let result = OCRBasalPathExtractor.extract(image: pixels, plotFrame: past,
             excludedRects: [], timeline: .init(calibration: time, referenceX: marker.maxX,
                 referenceDate: capture.addingTimeInterval(-30)), rateCalibration: rate,
