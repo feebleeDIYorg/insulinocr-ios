@@ -177,10 +177,8 @@ final class CaseLibraryStore {
         guard let record = caseRecord(id: caseID) else { return }
         record.captureTime = captureTime
         record.captureTimeSource = .userCorrection
-        if let asset = try screenshotAsset(caseID: caseID) {
-            asset.captureTime = captureTime
-            asset.captureTimeSourceRaw = StoredCaptureTimeSource.userCorrection.rawValue
-        }
+        // Screenshot metadata records the original import observation. The case
+        // holds the editable reference time; its analysis/computation runs are versioned.
         try modelContext.save()
         refresh()
         changeObserver?(caseID)

@@ -23,6 +23,8 @@ struct CaseArchiveSnapshot: Sendable {
         let activeAnalysisRunID: UUID?
         let activeCorrectionRevisionID: UUID?
         let activeComputationRunID: UUID?
+        let createdAt: Date?
+        let updatedAt: Date?
     }
 
     struct Screenshot: Codable, Sendable {
@@ -33,6 +35,10 @@ struct CaseArchiveSnapshot: Sendable {
         let pixelHeight: Int
         let byteCount: Int
         let sha256: String
+        let captureTime: Date?
+        let captureTimeSource: String?
+        let createdAt: Date?
+        let layoutProfile: String?
     }
 
     let metadata: Metadata
@@ -99,7 +105,9 @@ struct CaseArchiveSnapshot: Sendable {
                 reviewReason: record.reviewReason,
                 activeAnalysisRunID: record.activeAnalysisRunID,
                 activeCorrectionRevisionID: record.activeCorrectionRevisionID,
-                activeComputationRunID: record.activeComputationRunID
+                activeComputationRunID: record.activeComputationRunID,
+                createdAt: record.createdAt,
+                updatedAt: record.updatedAt
             ),
             screenshot: Screenshot(
                 id: asset.id,
@@ -108,7 +116,11 @@ struct CaseArchiveSnapshot: Sendable {
                 pixelWidth: asset.pixelWidth,
                 pixelHeight: asset.pixelHeight,
                 byteCount: asset.byteCount,
-                sha256: asset.sha256
+                sha256: asset.sha256,
+                captureTime: asset.captureTime,
+                captureTimeSource: asset.captureTimeSourceRaw,
+                createdAt: asset.createdAt,
+                layoutProfile: asset.layoutProfile
             ),
             originalData: original,
             diagnosticData: diagnostic,

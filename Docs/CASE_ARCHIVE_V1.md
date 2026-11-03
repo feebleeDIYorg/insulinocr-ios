@@ -65,6 +65,13 @@ build and optional public source revision remain available for QA.
 historical runs created by an older app. It is absent when no active run can be
 decoded; the currently installed calculator version is never substituted.
 
+Optional `case.createdAt` and `case.updatedAt` preserve stored case timestamps.
+The screenshot object can include `captureTime`, `captureTimeSource`, `createdAt`
+and `layoutProfile`. Screenshot capture metadata retains the import observation;
+the case reference time can be corrected independently. Legacy v1 archives may
+omit these fields, and older assets may already report `userCorrection` as their
+source. Missing original provenance is never invented during export.
+
 The required top-level shape is:
 
 ```json
