@@ -92,7 +92,14 @@ final class ScreenshotFlowUITests: XCTestCase {
         XCTAssertTrue(app.staticTexts["Bolus IOB, Basis, Szenario, Delta, 0.00 IE, 1.00 IE, +1.00 IE"].waitForExistence(timeout: 5))
         XCTAssertTrue(app.staticTexts["Aktive KH, Basis, Szenario, Delta, 0.00 g, 15.00 g, +15.00 g"].exists)
         app.buttons["Szenario speichern"].tap()
-        XCTAssertTrue(app.staticTexts[scenarioName].waitForExistence(timeout: 5), app.debugDescription)
+        let savedScenario = app.staticTexts[scenarioName]
+        // Repeated imports retain the same case and its saved scenarios. Form
+        // virtualizes older/longer histories, so locate the appended row by scrolling.
+        for _ in 0..<8 {
+            if savedScenario.waitForExistence(timeout: 0.5) { break }
+            app.swipeUp()
+        }
+        XCTAssertTrue(savedScenario.waitForExistence(timeout: 5), app.debugDescription)
         app.buttons["Schließen"].tap()
         XCTAssertEqual(metric("Basal IOB", in: app).label, correctedLabel)
         XCTAssertEqual(metric("Bolus IOB", in: app).label, "Bolus IOB, 0.00, IE")
