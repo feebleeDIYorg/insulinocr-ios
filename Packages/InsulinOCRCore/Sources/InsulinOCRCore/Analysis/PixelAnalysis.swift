@@ -220,15 +220,25 @@ enum OCRLayoutDetector {
         }
     }
 
+    /// The capture marker is a darker rule than any gridline. A clock label
+    /// within the search radius would otherwise snap to it, so its columns and
+    /// anti-aliased edges never count as raster evidence.
     static func alignTimeAnchors(
-        _ anchors: [OCRTimeAnchor], image: OCRPixelImage, frame: OCRNormalizedRect
+        _ anchors: [OCRTimeAnchor], image: OCRPixelImage, frame: OCRNormalizedRect,
+        captureMarker: OCRNormalizedRect? = nil
     ) -> [OCRTimeAnchor] {
         let bounds = image.pixelRect(for: frame)
+        let markerColumns = captureMarker.map { marker -> ClosedRange<Int> in
+            let rect = image.pixelRect(for: marker)
+            return (rect.x - 2)...(rect.maxX + 1)
+        }
         return anchors.map { anchor in
             let center = Int(anchor.x * Double(image.width))
             let radius = max(2, image.width / 120)
             var columnScores: [(x: Int, count: Int, contrast: Int)] = []
-            for x in max(bounds.x, center - radius)...min(bounds.maxX - 1, center + radius) {
+            let lower = max(bounds.x, center - radius), upper = min(bounds.maxX - 1, center + radius)
+            guard lower <= upper else { return anchor }
+            for x in lower...upper where markerColumns?.contains(x) != true {
                 var count = 0
                 var contrast = 0
                 for y in stride(from: bounds.y + 4, to: bounds.maxY - 4, by: 2) {
@@ -560,7 +570,58 @@ enum OCREventStemDetector {
                 confidence: 0.55 + lengthConfidence * 0.35 + (kind == .unknown ? 0 : 0.1)
             )
         }
-        return isolatePillRegions(recoverStackedBolusStems(stems, image: image, frame: plotFrame))
+        return isolatePillRegions(dropStemsBehindNeighbouringPill(
+            recoverStackedBolusStems(stems, image: image, frame: plotFrame), image: image))
+    }
+
+    /// A bolus stem can run down behind the carbohydrate pill of an event one
+    /// or two minutes away. Its lower part then looks like a second stem under
+    /// that pill and would split the label between both. The lower part is
+    /// dropped only when the stem already carries its own upper pill and the
+    /// pill outline above is centred on exactly one neighbour instead.
+    static func dropStemsBehindNeighbouringPill(
+        _ stems: [OCRDetectedEventStem], image: OCRPixelImage
+    ) -> [OCRDetectedEventStem] {
+        let width = Double(image.width), height = Double(image.height)
+        func sameColumn(_ a: OCRDetectedEventStem, _ b: OCRDetectedEventStem) -> Bool {
+            abs(a.stemRect.midX - b.stemRect.midX) < 3 / width
+        }
+        return stems.filter { stem in
+            guard stem.isComplete, stems.contains(where: {
+                $0.isComplete && sameColumn($0, stem) && $0.stemRect.minY < stem.stemRect.minY - 0.015
+            }) else { return true }
+            // Closer than one pill height: both cannot own a pill on this row.
+            let neighbours = stems.filter {
+                $0.isComplete && !sameColumn($0, stem)
+                    && abs($0.stemRect.minY - stem.stemRect.minY) < 0.015
+                    && abs($0.stemRect.midX - stem.stemRect.midX) * width < 0.045 * height
+            }
+            guard neighbours.count == 1,
+                  let center = pillBaseCenterX(above: stem, image: image) else { return true }
+            return !(abs(center - neighbours[0].stemRect.midX * width) <= 1.5
+                && abs(center - stem.stemRect.midX * width) >= 2.5)
+        }
+    }
+
+    /// Pixel centre of the flat light-grey pill outline directly above a stem.
+    static func pillBaseCenterX(above stem: OCRDetectedEventStem, image: OCRPixelImage) -> Double? {
+        let rect = image.pixelRect(for: stem.stemRect)
+        let column = rect.x + rect.width / 2
+        func isOutline(_ color: OCRPixelColor) -> Bool {
+            let low = min(color.red, color.green, color.blue)
+            let high = max(color.red, color.green, color.blue)
+            return low >= 170 && high <= 240 && high - low <= 16
+        }
+        var best: (lower: Int, upper: Int)?
+        for y in max(0, rect.y - 3)..<rect.y where isOutline(image[column, y]) {
+            var lower = column, upper = column
+            while lower > 0, isOutline(image[lower - 1, y]) { lower -= 1 }
+            while upper < image.width - 1, isOutline(image[upper + 1, y]) { upper += 1 }
+            if upper - lower > (best.map { $0.upper - $0.lower } ?? 0) { best = (lower, upper) }
+        }
+        // A pill base is far wider than a stem; anything shorter is no outline.
+        guard let run = best, run.upper - run.lower >= max(12, image.height / 60) else { return nil }
+        return Double(run.lower + run.upper + 1) / 2
     }
 
     static func recoverStackedBolusStems(

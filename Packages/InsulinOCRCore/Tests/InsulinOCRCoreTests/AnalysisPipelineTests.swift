@@ -181,6 +181,42 @@ final class AnalysisPipelineTests: XCTestCase {
             image: .init(width: width, height: height, rgba: bytes), frame: frame).count, 2)
     }
 
+    func testBolusStemBehindNeighbouringCarbohydratePillIsNotASecondLowerEvent() {
+        let width = 1_000, height = 500
+        func image(outline: Bool) -> OCRPixelImage {
+            var bytes = [UInt8](repeating: 255, count: width * height * 4)
+            func paint(_ xs: Range<Int>, _ ys: Range<Int>, _ rgb: (UInt8, UInt8, UInt8)) {
+                for y in ys {
+                    for x in xs {
+                        let i = (y * width + x) * 4
+                        bytes[i] = rgb.0; bytes[i + 1] = rgb.1; bytes[i + 2] = rgb.2
+                    }
+                }
+            }
+            // Carbohydrate stem under the centre of its pill base; a bolus
+            // stem five pixels away passes behind that pill up to a blue pill.
+            if outline { paint(370..<431, 83..<85, (199, 199, 204)) }
+            paint(399..<402, 85..<130, (0, 0, 0))
+            paint(404..<407, 85..<130, (0, 0, 0))
+            paint(404..<407, 52..<62, (0, 0, 0))
+            paint(395..<415, 36..<41, (25, 143, 255))
+            return .init(width: width, height: height, rgba: bytes)
+        }
+        let frame = OCRNormalizedRect(x: 0.1, y: 0.2, width: 0.8, height: 0.65)
+        let stems = OCREventStemDetector.detect(image: image(outline: true), plotFrame: frame)
+        XCTAssertEqual(stems.count, 2)
+        XCTAssertEqual(stems.first?.stemRect.midX ?? 0, 0.4005, accuracy: 1e-9)
+        XCTAssertEqual(stems.first?.stemRect.minY ?? 0, 0.17, accuracy: 1e-9)
+        // The carbohydrate pill crop is not split at the neighbouring stem.
+        XCTAssertGreaterThan(stems.first?.pillRect.width ?? 0, 0.05)
+        XCTAssertEqual(stems.last?.kind, .bolus)
+        XCTAssertEqual(stems.last?.stemRect.midX ?? 0, 0.4055, accuracy: 1e-9)
+        XCTAssertEqual(stems.last?.stemRect.minY ?? 0, 0.104, accuracy: 1e-9)
+        // Without a measurable pill outline the ownership stays undecided
+        // and every geometric stem is kept.
+        XCTAssertEqual(OCREventStemDetector.detect(image: image(outline: false), plotFrame: frame).count, 3)
+    }
+
     func testBasalBlueExcludesPurpleInterfaceHighlight() {
         XCTAssertTrue(OCRPixelColor(red: 25, green: 143, blue: 255, alpha: 255).isTherapyBlue)
         XCTAssertFalse(OCRPixelColor(red: 190, green: 185, blue: 255, alpha: 255).isTherapyBlue)
@@ -401,6 +437,34 @@ final class AnalysisPipelineTests: XCTestCase {
         XCTAssertEqual(aligned[0].x, 0.3035, accuracy: 1e-9)
         XCTAssertEqual(aligned[1].x, anchors[1].x)
         XCTAssertEqual(aligned.map(\.minuteOfDay), anchors.map(\.minuteOfDay))
+    }
+
+    func testTimeLabelNearCaptureMarkerAlignsToGridlineNotMarker() throws {
+        let width = 2_000, height = 400
+        var pixels = [UInt8](repeating: 255, count: width * height * 4)
+        func paint(_ columns: Range<Int>, _ value: UInt8) {
+            for y in 40..<360 {
+                for x in columns {
+                    for channel in 0..<3 { pixels[(y * width + x) * 4 + channel] = value }
+                }
+            }
+        }
+        // Hour gridline, then a darker capture marker a few minutes later
+        // inside the label's search radius, then the grey future panel.
+        paint(1_400..<1_402, 195)
+        paint(1_412..<1_413, 166)
+        paint(1_413..<1_418, 142)
+        paint(1_418..<1_419, 200)
+        paint(1_419..<1_800, 216)
+        let image = OCRPixelImage(width: width, height: height, rgba: pixels)
+        let frame = OCRNormalizedRect(x: 0.1, y: 0.1, width: 0.8, height: 0.8)
+        let marker = try XCTUnwrap(OCRLayoutDetector.captureMarker(image: image, frame: frame))
+        let anchors: [OCRTimeAnchor] = [.init(x: 0.6995, minuteOfDay: 960, observationID: nil)]
+        let snapped = OCRLayoutDetector.alignTimeAnchors(anchors, image: image, frame: frame)
+        XCTAssertGreaterThan(snapped[0].x, 0.706)
+        let aligned = OCRLayoutDetector.alignTimeAnchors(
+            anchors, image: image, frame: frame, captureMarker: marker)
+        XCTAssertEqual(aligned[0].x, 0.70025, accuracy: 1e-9)
     }
 
     func testTimeLabelAtFuturePanelUsesRasterInsteadOfBroadBackground() {

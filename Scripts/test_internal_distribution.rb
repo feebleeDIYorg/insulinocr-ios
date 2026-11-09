@@ -44,7 +44,7 @@ end
 checks += 1
 
 options = FastlaneCore::Configuration.create(Pilot::Options.available_options,
-  InsulinOCRSetupPolicy.internal_distribution_options("qa_distribute", "Synthetic QA notes"))
+  InsulinOCRSetupPolicy.internal_distribution_options("qa_upload", "Synthetic QA notes"))
 build = SyntheticDistributionBuild.new
 manager.send(:distribute_build, build, options)
 raise "External review or missing internal assignment" unless build.review_requests.zero? && build.assigned_groups.length == 1
@@ -70,7 +70,7 @@ offline.define_singleton_method(:app) { OpenStruct.new(id: "synthetic-app") }
 metadata_reached = false
 offline.define_singleton_method(:update_beta_app_meta) { |_options, _build| metadata_reached = true }
 without_archive = FastlaneCore::Configuration.create(Pilot::Options.available_options,
-  InsulinOCRSetupPolicy.internal_distribution_options("qa_distribute", "Synthetic QA notes").merge(
+  InsulinOCRSetupPolicy.internal_distribution_options("qa_upload", "Synthetic QA notes").merge(
     app_identifier: "org.example.insulinocr", app_version: "0.1.0", build_number: "1",
     ipa: nil, pkg: nil, skip_submission: true))
 raise "Regression requires no archive" if without_archive[:ipa] || without_archive[:pkg]

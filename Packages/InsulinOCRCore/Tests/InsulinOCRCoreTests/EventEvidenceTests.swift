@@ -42,4 +42,30 @@ final class EventEvidenceTests: XCTestCase {
         let conflict = [OCRTextCandidate(text: "24 g", confidence: 0.9)] + observation("23 g").candidates
         XCTAssertEqual(OCRTextParser.amount(from: conflict, expectedKind: .unknown).0, .amountUnknown)
     }
+
+    func testAgreeingLowConfidencePassesCorroborateAnAmount() {
+        func pass(_ texts: String..., confidence: Double = 0.3) -> [OCRTextCandidate] {
+            texts.map { .init(text: $0, confidence: confidence) }
+        }
+        let carbs = OCRTextParser.corroboratedAmount(
+            fromPasses: [pass("24g"), [], pass("24 g")], expectedKind: .unknown)
+        XCTAssertEqual(carbs.0, .known(24))
+        XCTAssertEqual(carbs.1, .carbohydrates)
+        XCTAssertEqual(carbs.2, 0.3, accuracy: 1e-9)
+        XCTAssertEqual(OCRTextParser.corroboratedAmount(
+            fromPasses: [pass("2IE"), pass("2 IE")], expectedKind: .unknown).1, .bolus)
+
+        // One pass alone, even with two readings, is not corroboration.
+        let unknown = OCRDetectedAmount.amountUnknown
+        XCTAssertEqual(OCRTextParser.corroboratedAmount(
+            fromPasses: [pass("24g", "24 g"), []], expectedKind: .unknown).0, unknown)
+        // Any deviating, unreadable or kind-contradicting reading is a veto.
+        for other in [pass("4g"), pass("24"), pass("24 IE"), pass("24g", "Z4g"),
+                      pass("24g", confidence: 0.1)] {
+            XCTAssertEqual(OCRTextParser.corroboratedAmount(
+                fromPasses: [pass("24g"), other], expectedKind: .unknown).0, unknown)
+        }
+        XCTAssertEqual(OCRTextParser.corroboratedAmount(
+            fromPasses: [pass("24g"), pass("24 g")], expectedKind: .bolus).0, unknown)
+    }
 }

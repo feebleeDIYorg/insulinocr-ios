@@ -12,7 +12,7 @@ It does not copy app-specific identifiers, clinical code or unrelated targets.
 | 1. Validate Secrets | Validate configured repository/token, Apple API access, one existing distribution identity and Match decryption, without requiring app profiles | Read only |
 | 2. Add Identifiers | Run validation; find exact app and share identifiers, create missing identifiers and add required capabilities | Read only; Apple identifier/capability additions are possible |
 | 3. Prepare App Profiles | Default `check` verifies existing app profiles. Explicit `prepare_profiles` runs validation and prepares only the app/share App Store profiles with the existing distribution certificate | Writes encrypted app profiles only in explicit setup mode |
-| 4. Build and TestFlight | Require successful CI on the exact main commit. Default `preflight` verifies profiles; `qa_upload` delivers an experimental internal test build; `upload` additionally requires full acceptance | Read only |
+| 4. Build and TestFlight | Require successful CI on the exact main commit and deliver an internal build. Unchecked `release_gates_confirmed` (default) marks it as experimental QA; checking it requires full acceptance | Read only |
 
 All four actions are manual, main-only and protected by `testflight` approval.
 They serialize access to the same signing store. Existing organization credentials
@@ -36,33 +36,29 @@ the reference workflows, with a one-minute bound.
    renew the two app-specific profiles and commit their encrypted files to the
    selected private store, using its existing password and certificate. It must
    not change profiles belonging to other apps.
-4. Run **4. Build and TestFlight** in `preflight` mode. For an early experimental
-   internal QA build, explicitly select `qa_upload`, enter generic notes and
-   approve that deployment. This mode leaves unfinished acceptance criteria open
-   and prepends that limitation to the TestFlight notes. It requires successful
+4. Run **4. Build and TestFlight**. It has no mode selection and optional notes.
+   With `release_gates_confirmed` unchecked (the default) it delivers an early
+   experimental internal QA build: unfinished acceptance criteria stay open and
+   that limitation is prepended to the TestFlight notes. Without entered notes,
+   the main commit subject and short SHA are used. Delivery requires successful
    CI for the exact main commit, existing signing profiles, manual dispatch from
    the main workflow and the protected Environment approval. Delivery stays
    internal and Match stays read-only.
 
-   If Apple already accepted the binary but metadata or distribution failed,
-   select `qa_distribute` and provide `existing_build_number`. This finishes only
-   that build of the checked-in marketing version. It uses explicit German test
-   notes, disables external beta review and external notifications, and assigns
-   the existing internal group. It does not sign, archive, increment the build
-   number or upload a binary; Match credentials are not provided to this mode.
-   Exact-main CI and the protected Environment approval still apply.
+   If Apple accepted the binary but processing, notes or the internal group
+   assignment fail afterwards, the same run waits until the build is valid and
+   finishes only that build: German test notes, no external beta review or
+   notifications, and the existing internal group. Transient failures are
+   retried. Nothing is signed, archived or uploaded again in that step.
 
-   After the documented release gates actually pass, select `upload`, confirm
+   After the documented release gates actually pass, check
    `release_gates_confirmed`, enter generic notes and approve that deployment.
    The confirmation is a human attestation, not a substitute for measured
-   OCR/device/performance acceptance. It is not required by `qa_upload` and must
-   not be used to claim that an early QA build has passed final acceptance.
-
-   In `upload` mode, if `release_gates_confirmed` is false or missing, delivery stops before
-   signing with `stage=release_acceptance code=release_acceptance_required`.
-   Environment approval and successful CI do not set this separate confirmation.
-   Do not confirm unfinished acceptance criteria; `preflight` remains available
-   for a read-only check without an upload.
+   OCR/device/performance acceptance. It must not be used to claim that an early
+   QA build has passed final acceptance. The workflow derives the internal
+   `upload` mode from this checkbox and `qa_upload` otherwise; the dispatch
+   policy rejects any mismatch between that mode and the recorded input.
+   A read-only signing check without upload is action 3 in `check` mode.
 
 No distribution certificate or API key is generated or revoked by this sequence.
 An expired/missing/ambiguous identity stops setup. Match's certificate-generation

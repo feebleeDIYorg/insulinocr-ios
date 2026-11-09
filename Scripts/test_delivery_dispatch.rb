@@ -21,20 +21,22 @@ Dir.mktmpdir("insulinocr-dispatch-test-") do |root|
     "GITHUB_REPOSITORY" => "synthetic/app", "GITHUB_EVENT_PATH" => event_path,
     "GITHUB_WORKFLOW_REF" => "synthetic/app/.github/workflows/testflight.yml@refs/heads/main",
     "INSULINOCR_DELIVERY_MODE" => "upload", "INSULINOCR_BUILD_CONFIG" => "synthetic-private-canary"}
+  # Each case: environment, expected public code, optional workflow input override.
   cases = [
     [base.merge("INSULINOCR_RELEASE_GATES_CONFIRMED" => "false"), "release_acceptance_required"],
     [base, "release_acceptance_required"],
     [base.merge("INSULINOCR_RELEASE_GATES_CONFIRMED" => "true", "INSULINOCR_VERIFIED_CI_HEAD" => "b" * 40), "dispatch_invalid"],
     [base.merge("INSULINOCR_RELEASE_GATES_CONFIRMED" => "true"), "configuration_invalid"],
-    [base.merge("INSULINOCR_DELIVERY_MODE" => "preflight", "INSULINOCR_RELEASE_GATES_CONFIRMED" => "false"), "configuration_invalid"],
     [base.merge("INSULINOCR_DELIVERY_MODE" => "qa_upload", "INSULINOCR_RELEASE_GATES_CONFIRMED" => "false"), "configuration_invalid"],
     [base.merge("INSULINOCR_DELIVERY_MODE" => "qa_upload", "INSULINOCR_VERIFIED_CI_HEAD" => "b" * 40), "dispatch_invalid"],
     [base.merge("INSULINOCR_DELIVERY_MODE" => "qa_upload", "GITHUB_WORKFLOW_REF" => "synthetic/app/.github/workflows/ci.yml@refs/heads/main"), "dispatch_invalid"],
-    [base.merge("INSULINOCR_DELIVERY_MODE" => "qa_distribute", "INSULINOCR_EXISTING_BUILD_NUMBER" => "1"), "configuration_invalid"],
+    [base.merge("INSULINOCR_DELIVERY_MODE" => "qa_upload"), "dispatch_invalid", {"release_gates_confirmed" => true}],
+    [base.merge("INSULINOCR_DELIVERY_MODE" => "preflight"), "dispatch_invalid"],
     [base.merge("INSULINOCR_DELIVERY_MODE" => "qa_distribute"), "dispatch_invalid"]
   ]
-  cases.each do |env, code|
-    File.write(event_path, JSON.generate({"inputs" => {"mode" => env.fetch("INSULINOCR_DELIVERY_MODE"), "existing_build_number" => env["INSULINOCR_EXISTING_BUILD_NUMBER"]}}))
+  cases.each do |env, code, inputs|
+    inputs ||= {"release_gates_confirmed" => env["INSULINOCR_RELEASE_GATES_CONFIRMED"] == "true"}
+    File.write(event_path, JSON.generate({"inputs" => inputs}))
     out, err, status = Open3.capture3(env, RbConfig.ruby, File.join(root, "Scripts/run_testflight.rb"), unsetenv_others: true)
     raise "Unexpected dispatch result" unless !status.success? && out.include?("code=#{code}.") && err.empty?
     raise "Private input leaked" if out.include?("synthetic-private-canary")

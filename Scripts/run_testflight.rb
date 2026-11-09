@@ -13,7 +13,7 @@ exit_code = 1
 stage = "dispatch"
 begin
   raise ArgumentError unless ENV["GITHUB_REF"] == "refs/heads/main" && ENV["GITHUB_EVENT_NAME"] == "workflow_dispatch"
-  mode = ENV.fetch("INSULINOCR_DELIVERY_MODE", "preflight")
+  mode = ENV.fetch("INSULINOCR_DELIVERY_MODE")
   lane = InsulinOCRSetupPolicy.lane(mode)
   if mode == "profiles_apply"
     event = JSON.parse(File.read(ENV.fetch("GITHUB_EVENT_PATH")))
@@ -35,32 +35,30 @@ begin
   puts "::add-mask::#{ENV.fetch('TEAMID')}"
   stage = "credentials"
   InsulinOCRCredentials.apple_api_key_options(ENV)
-  unless mode == "qa_distribute"
-    %w[GH_PAT MATCH_PASSWORD].each { |key| raise ArgumentError if ENV.fetch(key).empty? }
-    stage = "repository_access"
-    token = ENV.fetch("GH_PAT")
-    repository = config.fetch("match_git_url").delete_prefix("https://github.com/").delete_suffix(".git")
-    uri = URI("https://api.github.com/repos/#{repository}")
-    request = Net::HTTP::Get.new(uri)
-    request["Authorization"] = "Bearer #{token}"
-    request["Accept"] = "application/vnd.github+json"
-    response = Net::HTTP.start(uri.host, uri.port, use_ssl: true, open_timeout: 15, read_timeout: 30) { |http| http.request(request) }
-    raise ArgumentError unless response.code == "200"
-    metadata = JSON.parse(response.body)
-    raise ArgumentError unless metadata["private"] == true && metadata.dig("permissions", "pull") == true
-    raise ArgumentError if mode == "profiles_apply" && metadata.dig("permissions", "push") != true
-    branch = config.fetch("match_git_branch", "main")
-    tree_uri = URI("https://api.github.com/repos/#{repository}/git/trees/#{URI.encode_www_form_component(branch)}?recursive=1")
-    tree_request = Net::HTTP::Get.new(tree_uri)
-    tree_request["Authorization"] = "Bearer #{token}"
-    tree_request["Accept"] = "application/vnd.github+json"
-    tree_response = Net::HTTP.start(tree_uri.host, tree_uri.port, use_ssl: true, open_timeout: 15, read_timeout: 30) { |http| http.request(tree_request) }
-    raise ArgumentError unless tree_response.code == "200"
-    ENV["INSULINOCR_EXISTING_CERTIFICATE_ID"] = InsulinOCRSetupPolicy.existing_certificate_id(JSON.parse(tree_response.body))
-    puts "::add-mask::#{ENV.fetch('INSULINOCR_EXISTING_CERTIFICATE_ID')}"
-    ENV["MATCH_GIT_BASIC_AUTHORIZATION"] = Base64.strict_encode64("x-access-token:#{token}")
-    puts "::add-mask::#{ENV.fetch('MATCH_GIT_BASIC_AUTHORIZATION')}"
-  end
+  %w[GH_PAT MATCH_PASSWORD].each { |key| raise ArgumentError if ENV.fetch(key).empty? }
+  stage = "repository_access"
+  token = ENV.fetch("GH_PAT")
+  repository = config.fetch("match_git_url").delete_prefix("https://github.com/").delete_suffix(".git")
+  uri = URI("https://api.github.com/repos/#{repository}")
+  request = Net::HTTP::Get.new(uri)
+  request["Authorization"] = "Bearer #{token}"
+  request["Accept"] = "application/vnd.github+json"
+  response = Net::HTTP.start(uri.host, uri.port, use_ssl: true, open_timeout: 15, read_timeout: 30) { |http| http.request(request) }
+  raise ArgumentError unless response.code == "200"
+  metadata = JSON.parse(response.body)
+  raise ArgumentError unless metadata["private"] == true && metadata.dig("permissions", "pull") == true
+  raise ArgumentError if mode == "profiles_apply" && metadata.dig("permissions", "push") != true
+  branch = config.fetch("match_git_branch", "main")
+  tree_uri = URI("https://api.github.com/repos/#{repository}/git/trees/#{URI.encode_www_form_component(branch)}?recursive=1")
+  tree_request = Net::HTTP::Get.new(tree_uri)
+  tree_request["Authorization"] = "Bearer #{token}"
+  tree_request["Accept"] = "application/vnd.github+json"
+  tree_response = Net::HTTP.start(tree_uri.host, tree_uri.port, use_ssl: true, open_timeout: 15, read_timeout: 30) { |http| http.request(tree_request) }
+  raise ArgumentError unless tree_response.code == "200"
+  ENV["INSULINOCR_EXISTING_CERTIFICATE_ID"] = InsulinOCRSetupPolicy.existing_certificate_id(JSON.parse(tree_response.body))
+  puts "::add-mask::#{ENV.fetch('INSULINOCR_EXISTING_CERTIFICATE_ID')}"
+  ENV["MATCH_GIT_BASIC_AUTHORIZATION"] = Base64.strict_encode64("x-access-token:#{token}")
+  puts "::add-mask::#{ENV.fetch('MATCH_GIT_BASIC_AUTHORIZATION')}"
   $stdout.flush
   Dir.mktmpdir("insulinocr-signing-", ENV.fetch("RUNNER_TEMP")) do |directory|
     status_path = File.join(directory, "status.json")
@@ -77,13 +75,12 @@ begin
     end
   end
   if exit_code.zero?
-    puts(mode == "qa_distribute" ? "Existing QA TestFlight build distributed; no binary uploaded." :
-      InsulinOCRSetupPolicy.upload_mode?(mode) ? "TestFlight upload completed." : "Requested delivery stage completed; no build uploaded.")
+    puts(InsulinOCRSetupPolicy.upload_mode?(mode) ? "TestFlight upload completed." : "Requested delivery stage completed; no build uploaded.")
   end
 rescue StandardError => error
   puts "::error::InsulinOCR delivery failed: stage=#{stage} code=#{InsulinOCRDeliveryStatus.failure_code(stage, error)}. Private diagnostics were not published."
   if stage == "release_acceptance"
-    puts "::error::Upload was not started: release_gates_confirmed must explicitly be true after the documented release criteria pass. Use preflight for a read-only signing check."
+    puts "::error::Upload was not started: release_gates_confirmed must explicitly be true after the documented release criteria pass. Leave it unchecked for an experimental internal QA build."
   end
 ensure
   ENV.delete("INSULINOCR_DELIVERY_STATUS_FILE")

@@ -36,8 +36,15 @@ labels may remain English even when both test apps request German localization.
 The fixture is copied as a folder reference. Xcode's individual PNG resource
 processing otherwise changes the bytes, even when PNG compression is disabled.
 Preparation compares the built input against the committed fixture before
-installation. `Scripts/generate_ui_fixture.py` can regenerate the source on
+installation. `Scripts/generate_ui_fixture.py base` can regenerate the source on
 macOS with Pillow and the system Arial font; CI consumes the committed PNG.
+
+`SyntheticTherapyEvents12Hours.png` is the same chart plus a 24 g carbohydrate
+pill at 03:00 and a 4 U bolus pill at 07:00 (`generate_ui_fixture.py events`,
+rendered with Liberation Sans). `SyntheticEventAnalysisTests` runs the real
+extractor on it, including Vision pill OCR, and requires both events with kind,
+amount and time. The UI flow does not use this image. Synthetic pills prove the
+wiring only, never recognition accuracy on real screenshots.
 
 ## Checks
 
