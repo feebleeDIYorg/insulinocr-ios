@@ -93,6 +93,30 @@ enum OCRTextParser {
         return (.known(first.0), first.1, first.2)
     }
 
+    /// Fallback for labels Vision reads at its lowest confidence level only.
+    /// Each inner array is one recognition pass over the same pill. At least
+    /// two passes must have read something, and every candidate of every pass
+    /// must parse to the same amount and kind. A single unreadable, deviating
+    /// or sub-level candidate keeps the amount unknown.
+    static func corroboratedAmount(
+        fromPasses passes: [[OCRTextCandidate]],
+        expectedKind: OCRTherapyEventKind
+    ) -> (OCRDetectedAmount, OCRTherapyEventKind, Double) {
+        let readings = passes.filter { !$0.isEmpty }
+        let all = readings.flatMap { $0 }
+        guard readings.count >= 2, all.allSatisfy({ $0.confidence >= 0.25 }) else {
+            return (.amountUnknown, expectedKind, 0)
+        }
+        let parsed = all.map {
+            amount(from: [OCRTextCandidate(text: $0.text, confidence: 1)], expectedKind: expectedKind)
+        }
+        guard let first = parsed.first, first.0.value != nil,
+              parsed.allSatisfy({ $0.0 == first.0 && $0.1 == first.1 }) else {
+            return (.amountUnknown, expectedKind, 0)
+        }
+        return (first.0, first.1, all.map(\.confidence).min() ?? 0)
+    }
+
     private static func parseNumber(in text: String, expression: NSRegularExpression) -> Double? {
         let range = NSRange(text.startIndex..<text.endIndex, in: text)
         guard let match = expression.firstMatch(in: text, range: range),

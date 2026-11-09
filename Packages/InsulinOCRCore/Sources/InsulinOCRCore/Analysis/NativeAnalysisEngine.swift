@@ -13,7 +13,7 @@ public struct NativeAnalysisConfiguration: Sendable, Equatable {
     public let maximumTimeResidualMinutes: Double
 
     public init(
-        algorithmVersion: String = "native-1.11.2",
+        algorithmVersion: String = "native-1.12.0",
         minimumBasalCoverage: Double = 0.99,
         maximumTimeResidualMinutes: Double = 1
     ) {
@@ -283,6 +283,7 @@ public actor NativeAnalysisEngine: AnalysisEngine {
                 .sorted { $0.confidence > $1.confidence }
             var evidenceIDs = evidence.map(\.id)
             var parsed = OCRTextParser.amount(from: candidates, expectedKind: stem.kind)
+            var corroborated = false
             if parsed.0.value == nil && !clippedPill {
                 let enhanced = try recognizeText(in: cgImage, region: pillRegion,
                     kind: .eventPill, minimumTextHeight: 0.02, enhancePill: true)
@@ -297,6 +298,17 @@ public actor NativeAnalysisEngine: AnalysisEngine {
                 candidates.sort { $0.confidence > $1.confidence }
                 evidenceIDs += usable.map(\.id)
                 parsed = OCRTextParser.amount(from: candidates, expectedKind: stem.kind)
+                if parsed.0.value == nil {
+                    // Original crop, uncropped image and enhanced crop.
+                    let inside = pillObservations.filter { $0.boundingBox.maxX <= layout.dataRightEdgeX }
+                    let insideIDs = Set(inside.map(\.id))
+                    parsed = OCRTextParser.corroboratedAmount(fromPasses: [
+                        inside.flatMap(\.candidates),
+                        evidence.filter { !insideIDs.contains($0.id) }.flatMap(\.candidates),
+                        usable.flatMap(\.candidates),
+                    ], expectedKind: stem.kind)
+                    corroborated = parsed.0.value != nil
+                }
             }
             therapyEvents.append(
                 OCRTherapyEvent(
@@ -313,7 +325,9 @@ public actor NativeAnalysisEngine: AnalysisEngine {
                         sourceObservationIDs: evidenceIDs,
                         note: parsed.0.value == nil
                             ? "Complete event stem found geometrically; no safe amount was recognized."
-                            : nil
+                            : corroborated
+                                ? "Amount accepted from agreeing low-confidence recognition passes."
+                                : nil
                     )
                 )
             )

@@ -88,6 +88,16 @@ Merged multi-pill text, shared evidence and conflicting amounts remain unknown;
 the confidence threshold is unchanged. All contributing observation IDs remain
 in provenance.
 
+Since native analysis 1.12.0 a pill whose text Vision reads only at its lowest
+confidence level (0.3, below the 0.35 threshold) can still supply an amount when
+at least two of the three recognition passes (pill crop, uniquely owned
+full-image text, enhanced pill crop) read something and every candidate of every
+pass parses to the same amount and kind. One deviating, unreadable or weaker
+candidate keeps the amount unknown; the event's provenance note records the
+corroborated acceptance. The passes share the same pixels and recognizer, so
+this is agreement, not independent proof. The rule was motivated by a single
+private screenshot and is not validated on a corpus (gate E4 stays open).
+
 Known landscape layouts from 1 to 48 hours are supported. Unknown layouts are
 rejected as `unsupportedLayout`. A fully visible event stem with an uncertain
 amount becomes `amountUnknown` and blocks the relevant IOB or COB component.
@@ -147,6 +157,7 @@ cases. Crops exceeding the preparation memory bound skip the alternate pass.
 Only complete geometrically isolated stems are retried. Alternate text touching
 the integer crop boundary cannot supply a quantity; rejected observations remain
 available for QA. Accepted candidates join the original evidence and use the same
-quantity parser and confidence threshold. Conflicting recognized quantities stay
+quantity parser and confidence threshold (see the 1.12.0 corroboration rule
+above for the low-confidence fallback). Conflicting recognized quantities stay
 unknown. This does not change basal extraction, clock validation, activity models
 or completeness gates. Real-image/device release acceptance remains separate.
