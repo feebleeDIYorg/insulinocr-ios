@@ -42,6 +42,9 @@ revocation are excluded from the four-stage workflow.
 
 ## Preflight
 
+Track the current state and evidence of every gate below in
+[ACCEPTANCE_STATUS.md](ACCEPTANCE_STATUS.md).
+
 - [`xcode-27`](https://github.com/actions/runner-images/issues/14404) is the
   GitHub-hosted Apple-silicon runner label, not a self-hosted runner
   requirement. The workflow still verifies the exact Xcode version and build
