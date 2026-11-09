@@ -43,7 +43,7 @@ upload = {"INSULINOCR_DELIVERY_MODE" => "qa_upload", "GITHUB_SHA" => sha,
  "GITHUB_REF" => "refs/heads/main", "GITHUB_EVENT_NAME" => "workflow_dispatch",
  "GITHUB_WORKFLOW_REF" => "synthetic/app/.github/workflows/testflight.yml@refs/heads/main",
  "INSULINOCR_RELEASE_GATES_CONFIRMED" => "false"}
-qa_event = {"inputs" => {"mode" => "qa_upload"}}
+qa_event = {"inputs" => {"release_gates_confirmed" => false, "release_notes" => ""}}
 assert.call(InsulinOCRSetupPolicy.delivery_authorized?(upload, qa_event)); checks += 1
 assert.call(InsulinOCRSetupPolicy.lane("qa_upload") == "beta"); checks += 1
 [{"GITHUB_REF" => "refs/heads/other"}, {"GITHUB_EVENT_NAME" => "push"},
@@ -53,24 +53,28 @@ assert.call(InsulinOCRSetupPolicy.lane("qa_upload") == "beta"); checks += 1
  {"INSULINOCR_DELIVERY_MODE" => "preflight"}].each do |changes|
  assert.call(!InsulinOCRSetupPolicy.delivery_authorized?(upload.merge(changes), qa_event)); checks += 1
 end
-assert.call(!InsulinOCRSetupPolicy.delivery_authorized?(upload, {"inputs" => {"mode" => "upload"}})); checks += 1
+assert.call(!InsulinOCRSetupPolicy.delivery_authorized?(upload, {"inputs" => {"release_gates_confirmed" => true}})); checks += 1
+assert.call(!InsulinOCRSetupPolicy.delivery_authorized?(upload, {"inputs" => {"release_gates_confirmed" => "true"}})); checks += 1
 [nil, [], {"inputs" => []}].each do |invalid_event|
  assert.call(!InsulinOCRSetupPolicy.delivery_authorized?(upload, invalid_event)); checks += 1
 end
 accepted = upload.merge("INSULINOCR_DELIVERY_MODE" => "upload", "INSULINOCR_RELEASE_GATES_CONFIRMED" => "true")
-accepted_event = {"inputs" => {"mode" => "upload"}}
+accepted_event = {"inputs" => {"release_gates_confirmed" => true}}
 assert.call(InsulinOCRSetupPolicy.delivery_authorized?(accepted, accepted_event)); checks += 1
+# Raw event payloads may carry booleans as strings.
+assert.call(InsulinOCRSetupPolicy.delivery_authorized?(accepted, {"inputs" => {"release_gates_confirmed" => "true"}})); checks += 1
+assert.call(!InsulinOCRSetupPolicy.delivery_authorized?(accepted, qa_event)); checks += 1
 assert.call(!InsulinOCRSetupPolicy.delivery_authorized?(accepted.merge("INSULINOCR_RELEASE_GATES_CONFIRMED" => "false"), accepted_event)); checks += 1
 assert.call(InsulinOCRSetupPolicy.release_notes("qa_upload", "Synthetic notes") == "#{InsulinOCRSetupPolicy::QA_NOTICE}\n\nSynthetic notes"); checks += 1
 assert.call(InsulinOCRSetupPolicy.release_notes("upload", "Synthetic notes") == "Synthetic notes"); checks += 1
-resume = upload.merge("INSULINOCR_DELIVERY_MODE" => "qa_distribute", "INSULINOCR_EXISTING_BUILD_NUMBER" => "1")
-resume_event = {"inputs" => {"mode" => "qa_distribute", "existing_build_number" => "1"}}
-assert.call(InsulinOCRSetupPolicy.delivery_authorized?(resume, resume_event)); checks += 1
-[nil, "", "0", "-1", "1\n", "1; invalid", "1" * 19].each do |invalid_number|
- assert.call(!InsulinOCRSetupPolicy.delivery_authorized?(resume.merge("INSULINOCR_EXISTING_BUILD_NUMBER" => invalid_number), resume_event)); checks += 1
+%w[preflight qa_distribute].each do |removed|
+ reject.call { InsulinOCRSetupPolicy.lane(removed) }
+ assert.call(!InsulinOCRSetupPolicy.delivery_mode?(removed)); checks += 1
 end
-assert.call(!InsulinOCRSetupPolicy.delivery_authorized?(resume, {"inputs" => {"mode" => "qa_distribute", "existing_build_number" => "2"}})); checks += 1
-assert.call(!InsulinOCRSetupPolicy.upload_mode?("qa_distribute") && InsulinOCRSetupPolicy.lane("qa_distribute") == "distribute_existing_qa"); checks += 1
+assert.call(InsulinOCRSetupPolicy.notes_or_default("  Synthetic notes ", "Ignored", sha) == "Synthetic notes"); checks += 1
+assert.call(InsulinOCRSetupPolicy.notes_or_default("", "Synthetic change (#1)", sha) == "Synthetic change (#1) (aaaaaaa)"); checks += 1
+assert.call(InsulinOCRSetupPolicy.notes_or_default(nil, "Line\nbreak", nil) == "Line break"); checks += 1
+assert.call(InsulinOCRSetupPolicy.notes_or_default(" ", "", "not-a-sha") == InsulinOCRSetupPolicy::FALLBACK_NOTES); checks += 1
 require "match"
 Match::Generator.singleton_class.prepend(InsulinOCRSetupPolicy::ExistingCertificateOnly)
 reject.call { Match::Generator.generate_certificate(nil, nil, nil) }; checks += 1

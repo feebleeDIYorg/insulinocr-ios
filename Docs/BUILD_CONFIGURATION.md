@@ -48,9 +48,11 @@ Fork pull requests receive no signing credentials. Do not use pull_request_targe
 Workflow inputs and release notes are not confidential storage; use generic
 release descriptions and keep patient-specific TestFlight feedback private.
 
-The manual workflow defaults to `preflight`: it verifies access and decrypts
-existing Match profiles read-only without uploading a build. Select `upload`
-explicitly only after all release gates pass.
+The manual workflow has no mode selection. By default it delivers an
+experimental internal QA build; release notes are optional and default to the
+main commit subject. Check `release_gates_confirmed` only after all release
+gates pass. A read-only signing check without upload is **3. Prepare App
+Profiles** in its default `check` mode.
 
 Only the final approved signing step receives credentials. Private identifier
 values and derived authentication are masked before use. Detailed signing

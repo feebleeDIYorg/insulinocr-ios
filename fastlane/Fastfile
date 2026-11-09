@@ -66,6 +66,67 @@ def read_only_signing_preflight
   key
 end
 
+DISTRIBUTION_POLL_ATTEMPTS = 40
+DISTRIBUTION_POLL_SECONDS = 30
+DISTRIBUTION_ATTEMPTS = 3
+
+def release_notes_for_delivery(options)
+  subject = begin
+    sh("git", "-C", PROJECT_ROOT, "log", "-1", "--format=%s", log: false).to_s
+  rescue StandardError
+    ""
+  end
+  InsulinOCRSetupPolicy.notes_or_default(options[:release_notes] || ENV["RELEASE_NOTES"], subject, ENV["GITHUB_SHA"])
+end
+
+def find_uploaded_build(app, version, build_number)
+  builds = Spaceship::ConnectAPI::Build.all(app_id: app.id, version: version,
+    build_number: build_number.to_s, platform: "IOS")
+  builds.length == 1 ? builds[0] : nil
+end
+
+def binary_accepted?(version, build_number)
+  app = Spaceship::ConnectAPI::App.find(configured_app_identifier)
+  !app.nil? && !find_uploaded_build(app, version, build_number).nil?
+rescue StandardError
+  false
+end
+
+# Finish internal distribution of a binary App Store Connect already accepted.
+# Used when the upload succeeded but processing, notes or group assignment failed,
+# so that no manual recovery run with a hand-entered build number is needed.
+def distribute_accepted_build(key, version, build_number, mode, notes)
+  app = Spaceship::ConnectAPI::App.find(configured_app_identifier)
+  UI.user_error!("Configured TestFlight app is missing") unless app
+  groups = app.get_beta_groups.select { |group| group.name == "InsulinOCR Internal" && group.is_internal_group == true }
+  UI.user_error!("One internal TestFlight group is required") unless groups.length == 1
+  build = nil
+  DISTRIBUTION_POLL_ATTEMPTS.times do
+    candidate = find_uploaded_build(app, version, build_number)
+    if candidate&.processing_state == "VALID"
+      build = candidate
+      break
+    end
+    break if candidate && candidate.processing_state != "PROCESSING"
+    sleep(DISTRIBUTION_POLL_SECONDS)
+  end
+  UI.user_error!("One valid existing build of the current version is required") unless build
+  attempt = 0
+  begin
+    attempt += 1
+    assigned = groups[0].fetch_builds.any? { |existing| existing.id == build.id }
+    upload_to_testflight(api_key: key, app_identifier: configured_app_identifier,
+      distribute_only: true, app_version: version, skip_submission: assigned,
+      build_number: build_number.to_s,
+      **InsulinOCRSetupPolicy.internal_distribution_options(mode, notes).merge(groups: [groups[0].id]),
+      skip_waiting_for_build_processing: false)
+  rescue StandardError
+    raise if attempt >= DISTRIBUTION_ATTEMPTS
+    sleep(DISTRIBUTION_POLL_SECONDS)
+    retry
+  end
+end
+
 platform :ios do
   desc "1. Validate existing credentials and encrypted certificate without requiring app profiles"
   lane :validate_secrets do
@@ -171,12 +232,6 @@ platform :ios do
     end
   end
 
-  desc "Verify existing signing access and encrypted profiles without uploading"
-  lane :signing_preflight do
-    prepare_signing
-    read_only_signing_preflight
-  end
-
   desc "Build and upload an internal TestFlight build"
   lane :beta do |options|
     require_internal_delivery_authorization if ENV["CI"] == "true"
@@ -223,41 +278,24 @@ platform :ios do
       )
     end
 
-    InsulinOCRDeliveryStatus.around("upload") do
-      upload_to_testflight(
-      api_key: key,
-      app_identifier: configured_app_identifier,
-      **InsulinOCRSetupPolicy.internal_distribution_options(ENV["INSULINOCR_DELIVERY_MODE"],
-        options[:release_notes] || ENV.fetch("RELEASE_NOTES", "Interner InsulinOCR-Testbuild")),
-      skip_waiting_for_build_processing: false
-      )
-    end
-  end
-
-  desc "Finish one existing internal QA build without signing, archiving or uploading"
-  lane :distribute_existing_qa do
-    UI.user_error!("Protected manual CI delivery is required") unless ENV["CI"] == "true" && ENV["INSULINOCR_DELIVERY_MODE"] == "qa_distribute"
-    require_internal_delivery_authorization
-    prepare_signing # Configuration and project generation only; no Match call.
-    key = InsulinOCRDeliveryStatus.around("apple_key") { app_store_connect_key }
+    mode = ENV["INSULINOCR_DELIVERY_MODE"]
+    notes = release_notes_for_delivery(options)
     version = get_version_number(xcodeproj: PROJECT, target: "InsulinOCR")
-    InsulinOCRDeliveryStatus.around("distribution") do
-      app = Spaceship::ConnectAPI::App.find(configured_app_identifier)
-      UI.user_error!("Configured TestFlight app is missing") unless app
-      groups = app.get_beta_groups.select { |group| group.name == "InsulinOCR Internal" && group.is_internal_group == true }
-      UI.user_error!("One internal TestFlight group is required") unless groups.length == 1
-      builds = Spaceship::ConnectAPI::Build.all(app_id: app.id, version: version,
-        build_number: ENV.fetch("INSULINOCR_EXISTING_BUILD_NUMBER"), platform: "IOS")
-      UI.user_error!("One valid existing build of the current version is required") unless
-        builds.length == 1 && builds[0].processing_state == "VALID"
-      assigned = groups[0].fetch_builds.any? { |build| build.id == builds[0].id }
-      upload_to_testflight(api_key: key, app_identifier: configured_app_identifier,
-        distribute_only: true, app_version: version,
-        skip_submission: assigned,
-        build_number: ENV.fetch("INSULINOCR_EXISTING_BUILD_NUMBER"),
-        **InsulinOCRSetupPolicy.internal_distribution_options("qa_distribute",
-          ENV.fetch("RELEASE_NOTES", "Interner InsulinOCR-Testbuild")).merge(groups: [groups[0].id]),
-        skip_waiting_for_build_processing: false)
+    begin
+      InsulinOCRDeliveryStatus.around("upload") do
+        upload_to_testflight(
+        api_key: key,
+        app_identifier: configured_app_identifier,
+        **InsulinOCRSetupPolicy.internal_distribution_options(mode, notes),
+        skip_waiting_for_build_processing: false
+        )
+      end
+    rescue StandardError
+      raise unless binary_accepted?(version, next_build_number)
+      UI.important("Binary accepted by App Store Connect; completing internal distribution in this run")
+      InsulinOCRDeliveryStatus.around("distribution") do
+        distribute_accepted_build(key, version, next_build_number, mode, notes)
+      end
     end
   end
 end

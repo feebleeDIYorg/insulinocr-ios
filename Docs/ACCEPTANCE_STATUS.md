@@ -38,7 +38,7 @@ version only, never by attaching health data.
 | B1 | Pinned toolchain (Xcode 27.1 `27A9275`, XcodeGen 2.42.0, Ruby 3.4.12, Bundler 4.0.20, Fastlane 2.241.1) | ✅ Passed | `ci.yml` jobs verify every version before running repository code | 2026-11-04 |
 | B2 | CI passes without signing secrets (package, app, integration, UI) | ✅ Passed | `ci` run #55 on `8263bd2` | 2026-11-04 |
 | B3 | Delivery lanes and credential policy tests | ✅ Passed | `delivery-config` job, `Scripts/test_*.rb` | 2026-11-04 |
-| B4 | Read-only Match signing and internal TestFlight upload path | ✅ Passed | `4. Build and TestFlight` run #11 (`upload` job) on `8263bd2`; run #10 failed before it | 2026-11-04 |
+| B4 | Read-only Match signing and internal TestFlight upload path | ✅ Passed | `4. Build and TestFlight` run #11 (`qa_upload`) on `8263bd2`; the preceding `qa_distribute` recovery run #10 failed | 2026-11-04 |
 | B5 | Main-only deployment, required review and protected branch checks | ⬜ Open | Repository settings are outside Git; confirm and record here | — |
 
 ### Extraction (OCR) accuracy

@@ -3,10 +3,10 @@ require "time"
 module InsulinOCRSetupPolicy
   LANES = {"validate" => "validate_secrets", "identifiers" => "identifiers",
     "profiles_check" => "check_profiles", "profiles_apply" => "prepare_profiles",
-    "preflight" => "signing_preflight", "qa_upload" => "beta", "upload" => "beta",
-    "qa_distribute" => "distribute_existing_qa"}.freeze
+    "qa_upload" => "beta", "upload" => "beta"}.freeze
 
   QA_NOTICE = "Experimenteller interner QA-Build. OCR-, Geräte- und Leistungsabnahme sind noch offen. Nur für Tests und Feedback, nicht für Therapieentscheidungen.".freeze
+  FALLBACK_NOTES = "Interner InsulinOCR-Testbuild".freeze
 
   def self.lane(mode)
     LANES.fetch(mode) { raise ArgumentError, "Unsupported delivery operation" }
@@ -17,7 +17,14 @@ module InsulinOCRSetupPolicy
   end
 
   def self.delivery_mode?(mode)
-    upload_mode?(mode) || mode == "qa_distribute"
+    upload_mode?(mode)
+  end
+
+  # The workflow has no mode input: the release-gate checkbox alone selects
+  # between an experimental QA upload and an upload after full acceptance.
+  def self.requested_mode(event)
+    return nil unless event.is_a?(Hash) && event["inputs"].is_a?(Hash)
+    [true, "true"].include?(event["inputs"]["release_gates_confirmed"]) ? "upload" : "qa_upload"
   end
 
   def self.delivery_authorized?(env, event)
@@ -29,20 +36,26 @@ module InsulinOCRSetupPolicy
       repository.to_s.match?(%r{\A[A-Za-z0-9_.-]+/[A-Za-z0-9_.-]+\z}) &&
       env["GITHUB_REF"] == "refs/heads/main" && env["GITHUB_EVENT_NAME"] == "workflow_dispatch" &&
       env["GITHUB_WORKFLOW_REF"] == "#{repository}/.github/workflows/testflight.yml@refs/heads/main" &&
-      event.is_a?(Hash) && event["inputs"].is_a?(Hash) &&
-      event.dig("inputs", "mode") == mode &&
-      (mode != "upload" || env["INSULINOCR_RELEASE_GATES_CONFIRMED"] == "true") &&
-      (mode != "qa_distribute" ||
-        (env["INSULINOCR_EXISTING_BUILD_NUMBER"].to_s.match?(/\A[1-9][0-9]{0,17}\z/) &&
-         event.dig("inputs", "existing_build_number") == env["INSULINOCR_EXISTING_BUILD_NUMBER"]))
+      requested_mode(event) == mode &&
+      (mode != "upload" || env["INSULINOCR_RELEASE_GATES_CONFIRMED"] == "true")
+  end
+
+  # Optional workflow notes fall back to the squash-merged commit subject.
+  def self.notes_or_default(notes, subject, sha)
+    given = notes.to_s.strip
+    return given unless given.empty?
+    text = subject.to_s.gsub(/[[:cntrl:]]+/, " ").strip
+    text = FALLBACK_NOTES if text.empty?
+    short = sha.to_s[/\A[a-f0-9]{7}/]
+    short ? "#{text} (#{short})" : text
   end
 
   def self.release_notes(mode, notes)
-    %w[qa_upload qa_distribute].include?(mode) ? "#{QA_NOTICE}\n\n#{notes}" : notes
+    mode == "qa_upload" ? "#{QA_NOTICE}\n\n#{notes}" : notes
   end
 
   def self.internal_distribution_options(mode, notes)
-    # Metadata-only distribution has no IPA from which Pilot can infer its platform.
+    # Distribution after an interrupted upload has no IPA from which Pilot can infer its platform.
     {app_platform: "ios", groups: ["InsulinOCR Internal"], distribute_external: false,
       submit_beta_review: false, notify_external_testers: false,
       localized_build_info: {"de-DE" => {whats_new: release_notes(mode, notes)}}}

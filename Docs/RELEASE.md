@@ -72,24 +72,27 @@ Track the current state and evidence of every gate below in
 ## Upload
 
 Follow the [four-stage setup](FOUR_STAGE_DELIVERY.md) to validate secrets and
-prepare missing app profiles separately. Then run `testflight` in its default `preflight` mode and approve the protected
-Environment to verify existing signing credentials without uploading.
+prepare missing app profiles separately. **3. Prepare App Profiles** in `check`
+mode verifies existing signing credentials without uploading.
 
 For early device testing and feedback before full OCR/device/performance
-acceptance, explicitly select `qa_upload`, enter generic release notes and approve
-the Environment again. The notes automatically identify the build as experimental,
-the outstanding acceptance and its restriction to QA rather than therapy decisions.
-This does not confirm `release_gates_confirmed` or complete the product acceptance.
-No clinical calculation or incomplete-data safeguard changes in this mode.
+acceptance, run **4. Build and TestFlight** with `release_gates_confirmed`
+unchecked and approve the protected Environment. Release notes are optional;
+without them the main commit subject and short SHA are used. The notes
+automatically identify the build as experimental, the outstanding acceptance and
+its restriction to QA rather than therapy decisions. This does not complete the
+product acceptance. No clinical calculation or incomplete-data safeguard changes.
 
-If the binary is already valid in App Store Connect but post-upload distribution
-failed, use `qa_distribute` with its `existing_build_number`. This is a separately
-approved protected run for metadata and the internal group, without another
-archive or binary upload. Both internal paths explicitly disable external review
-and create German test notes even when the first build has no localizations.
+If App Store Connect accepted the binary but processing, notes or internal group
+assignment fail afterwards, the same run waits for the build to become valid and
+completes the internal distribution itself, retrying transient failures. No
+separate recovery run or hand-entered build number is needed. If that still
+fails, run the workflow again; it uploads a new build with the next number.
+Delivery always disables external review and creates German test notes, even
+when the first build has no localizations.
 
-After all release gates pass, select `upload`, confirm `release_gates_confirmed`,
-enter concise release notes and approve the Environment again. Both upload modes:
+After all release gates pass, check `release_gates_confirmed`, enter concise
+release notes and approve the Environment again. Both variants:
 
 1. verifies the exact Xcode build;
 2. verifies successful package, app, integration and UI CI on the exact main commit;

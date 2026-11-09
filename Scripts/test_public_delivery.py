@@ -41,6 +41,9 @@ class PublicDeliveryTests(unittest.TestCase):
         self.assertIn('Scripts/verify_delivery_ci.py', upload)
         self.assertIn('release_gates_confirmed:', upload)
         self.assertIn('default: false', upload)
+        self.assertIn("inputs.release_gates_confirmed && 'upload' || 'qa_upload'", upload)
+        for removed in ('mode:', 'existing_build_number', 'qa_distribute', 'preflight'):
+            self.assertNotIn(removed, upload)
 
     def test_both_targets_share_expanded_runtime_configuration(self):
         import plistlib
