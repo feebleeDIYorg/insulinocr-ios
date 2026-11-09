@@ -48,7 +48,7 @@ version only, never by attaching health data.
 | E1 | Unknown layouts rejected (`unsupportedLayout`) | 🟡 Synthetic only | `NativeAnalysisFailureTests` (Simulator) | 2026-11-04 |
 | E2 | Time/basal/glucose axis calibration and clock provenance | 🟡 Synthetic only | `AnalysisPipelineTests`, `ClockAlignedTimelineTests`; [REFERENCE_QA.md](REFERENCE_QA.md) | 2026-11-04 |
 | E3 | Capture marker stops observed therapy | 🟡 Synthetic only | `CaptureMarkerTests`; [CAPTURE_BOUNDARY.md](CAPTURE_BOUNDARY.md) | 2026-11-04 |
-| E4 | Event recognition (bolus/carbohydrate stems and amounts) on real screenshots | ⬜ Open | Unit tests with generated pixels only (`EventEvidenceTests`, `PillImagePreparationTests`); the end-to-end fixture contains no events | — |
+| E4 | Event recognition (bolus/carbohydrate stems and amounts) on real screenshots | ⬜ Open | No private corpus result recorded. Synthetic only: `EventEvidenceTests`, `PillImagePreparationTests`, and the end-to-end `SyntheticEventAnalysisTests` (one bolus, one carbohydrate pill; CI result not yet recorded) | — |
 | E5 | Glucose accuracy on real screenshots | ⬜ Open | No private corpus result recorded | — |
 | E6 | Basal accuracy on real screenshots | ⛔ Blocked | Needs C1 (reference semantics) | — |
 | E7 | Numerical accuracy thresholds defined before evaluation | ⬜ Open | Thresholds are referenced in docs but not yet written down | — |
