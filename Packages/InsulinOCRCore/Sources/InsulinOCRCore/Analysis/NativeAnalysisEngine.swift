@@ -13,7 +13,7 @@ public struct NativeAnalysisConfiguration: Sendable, Equatable {
     public let maximumTimeResidualMinutes: Double
 
     public init(
-        algorithmVersion: String = "native-1.11.0",
+        algorithmVersion: String = "native-1.11.1",
         minimumBasalCoverage: Double = 0.99,
         maximumTimeResidualMinutes: Double = 1
     ) {
@@ -159,7 +159,8 @@ public actor NativeAnalysisEngine: AnalysisEngine {
             horizontalRange: frame.minX...frame.maxX
         )
         let timeCalibration = try TimeAxisCalibrator.calibrate(
-            anchors: OCRLayoutDetector.alignTimeAnchors(timeAnchors, image: pixelImage, frame: frame),
+            anchors: OCRLayoutDetector.alignTimeAnchors(timeAnchors, image: pixelImage, frame: frame,
+                captureMarker: layoutEvidence.captureMarker),
             markerCentersX: markerCenters,
             plotRange: frame.minX...layoutEvidence.dataRightEdgeX
         )

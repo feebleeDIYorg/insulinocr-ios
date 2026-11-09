@@ -220,15 +220,25 @@ enum OCRLayoutDetector {
         }
     }
 
+    /// The capture marker is a darker rule than any gridline. A clock label
+    /// within the search radius would otherwise snap to it, so its columns and
+    /// anti-aliased edges never count as raster evidence.
     static func alignTimeAnchors(
-        _ anchors: [OCRTimeAnchor], image: OCRPixelImage, frame: OCRNormalizedRect
+        _ anchors: [OCRTimeAnchor], image: OCRPixelImage, frame: OCRNormalizedRect,
+        captureMarker: OCRNormalizedRect? = nil
     ) -> [OCRTimeAnchor] {
         let bounds = image.pixelRect(for: frame)
+        let markerColumns = captureMarker.map { marker -> ClosedRange<Int> in
+            let rect = image.pixelRect(for: marker)
+            return (rect.x - 2)...(rect.maxX + 1)
+        }
         return anchors.map { anchor in
             let center = Int(anchor.x * Double(image.width))
             let radius = max(2, image.width / 120)
             var columnScores: [(x: Int, count: Int, contrast: Int)] = []
-            for x in max(bounds.x, center - radius)...min(bounds.maxX - 1, center + radius) {
+            let lower = max(bounds.x, center - radius), upper = min(bounds.maxX - 1, center + radius)
+            guard lower <= upper else { return anchor }
+            for x in lower...upper where markerColumns?.contains(x) != true {
                 var count = 0
                 var contrast = 0
                 for y in stride(from: bounds.y + 4, to: bounds.maxY - 4, by: 2) {

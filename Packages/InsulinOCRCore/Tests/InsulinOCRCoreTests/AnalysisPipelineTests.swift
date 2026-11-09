@@ -403,6 +403,34 @@ final class AnalysisPipelineTests: XCTestCase {
         XCTAssertEqual(aligned.map(\.minuteOfDay), anchors.map(\.minuteOfDay))
     }
 
+    func testTimeLabelNearCaptureMarkerAlignsToGridlineNotMarker() throws {
+        let width = 2_000, height = 400
+        var pixels = [UInt8](repeating: 255, count: width * height * 4)
+        func paint(_ columns: Range<Int>, _ value: UInt8) {
+            for y in 40..<360 {
+                for x in columns {
+                    for channel in 0..<3 { pixels[(y * width + x) * 4 + channel] = value }
+                }
+            }
+        }
+        // Hour gridline, then a darker capture marker a few minutes later
+        // inside the label's search radius, then the grey future panel.
+        paint(1_400..<1_402, 195)
+        paint(1_412..<1_413, 166)
+        paint(1_413..<1_418, 142)
+        paint(1_418..<1_419, 200)
+        paint(1_419..<1_800, 216)
+        let image = OCRPixelImage(width: width, height: height, rgba: pixels)
+        let frame = OCRNormalizedRect(x: 0.1, y: 0.1, width: 0.8, height: 0.8)
+        let marker = try XCTUnwrap(OCRLayoutDetector.captureMarker(image: image, frame: frame))
+        let anchors: [OCRTimeAnchor] = [.init(x: 0.6995, minuteOfDay: 960, observationID: nil)]
+        let snapped = OCRLayoutDetector.alignTimeAnchors(anchors, image: image, frame: frame)
+        XCTAssertGreaterThan(snapped[0].x, 0.706)
+        let aligned = OCRLayoutDetector.alignTimeAnchors(
+            anchors, image: image, frame: frame, captureMarker: marker)
+        XCTAssertEqual(aligned[0].x, 0.70025, accuracy: 1e-9)
+    }
+
     func testTimeLabelAtFuturePanelUsesRasterInsteadOfBroadBackground() {
         let width = 1_000, height = 400
         var pixels = [UInt8](repeating: 255, count: width * height * 4)

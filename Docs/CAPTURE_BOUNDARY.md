@@ -11,3 +11,9 @@ The marker's paint width has no duration. If the basal path actually reaches its
 A recognized chart with less than one hour of observed history remains analyzable when its full chart window is supported. History completeness is evaluated independently; future delivery is never used to satisfy DIA or carbohydrate history requirements.
 
 Regression coverage uses generated pixels, including a deliberately different future basal rate and future event stem. Private screenshots and case-specific results are not repository fixtures.
+
+Native analysis 1.11.1 excludes the capture rule and its anti-aliased edges when
+a clock label is aligned to its gridline. The rule is darker than any gridline;
+a capture a few minutes after a labelled hour otherwise pulled that label onto
+the rule and failed the one-minute time residual
+(`testTimeLabelNearCaptureMarkerAlignsToGridlineNotMarker`).
