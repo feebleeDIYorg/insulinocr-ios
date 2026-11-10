@@ -167,7 +167,11 @@ enum OCRObservationInterpreter {
         }
         let selected = targeted.count >= 2 ? targeted : observations
         return selected.compactMap { observation in
+            // CamAPS clips a label at the chart's left edge. Its leading glyph
+            // is then partial ("00:00" can read as "10:00"), so a label
+            // starting exactly on that edge is no anchor, however confident.
             guard horizontalRange.contains(observation.boundingBox.midX),
+                  abs(observation.boundingBox.minX - horizontalRange.lowerBound) > 0.002,
                   observation.boundingBox.minY > 0.07,
                   let candidate = observation.bestCandidate,
                   candidate.confidence >= 0.3,

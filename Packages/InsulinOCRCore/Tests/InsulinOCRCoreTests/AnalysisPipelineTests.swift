@@ -217,6 +217,53 @@ final class AnalysisPipelineTests: XCTestCase {
         XCTAssertEqual(OCREventStemDetector.detect(image: image(outline: false), plotFrame: frame).count, 3)
     }
 
+    func testPillOutlineIsMeasuredOnlyWhenClosed() throws {
+        let width = 1_000, height = 500
+        func image(rightEnd: Bool, paperBeyond: Bool = true) -> OCRPixelImage {
+            var bytes = [UInt8](repeating: 255, count: width * height * 4)
+            func paint(_ xs: Range<Int>, _ ys: Range<Int>, _ rgb: (UInt8, UInt8, UInt8)) {
+                for y in ys {
+                    for x in xs {
+                        let i = (y * width + x) * 4
+                        bytes[i] = rgb.0; bytes[i + 1] = rgb.1; bytes[i + 2] = rgb.2
+                    }
+                }
+            }
+            let outline: (UInt8, UInt8, UInt8) = (199, 199, 204)
+            paint(380..<421, 83..<85, outline)
+            paint(380..<421, 60..<62, outline)
+            paint(368..<370, 62..<83, outline)
+            if rightEnd { paint(431..<433, 62..<83, outline) }
+            if !paperBeyond { paint(433..<445, 55..<90, (150, 150, 150)) }
+            paint(399..<402, 85..<130, (0, 0, 0))
+            return .init(width: width, height: height, rgba: bytes)
+        }
+        let frame = OCRNormalizedRect(x: 0.1, y: 0.2, width: 0.8, height: 0.65)
+        let closed = image(rightEnd: true)
+        let stem = try XCTUnwrap(OCREventStemDetector.detect(image: closed, plotFrame: frame).first)
+        let rect = try XCTUnwrap(OCREventStemDetector.closedPillRect(above: stem, image: closed))
+        XCTAssertEqual(rect.minX, 0.368, accuracy: 1e-9)
+        XCTAssertEqual(rect.maxX, 0.433, accuracy: 1e-9)
+        XCTAssertEqual(rect.minY, 0.12, accuracy: 1e-9)
+        // A missing end arc, or anything but paper beyond it, is no proof.
+        XCTAssertNil(OCREventStemDetector.closedPillRect(above: stem, image: image(rightEnd: false)))
+        XCTAssertNil(OCREventStemDetector.closedPillRect(
+            above: stem, image: image(rightEnd: true, paperBeyond: false)))
+    }
+
+    func testOnlySameRowNeighboursCompeteForPillPixels() {
+        func stem(x: Double, top: Double) -> OCRDetectedEventStem {
+            .init(kind: .unknown, stemRect: .init(x: x, y: top, width: 0.002, height: 0.2 - top),
+                pillRect: .init(x: x - 0.03, y: top - 0.045, width: 0.06, height: 0.045),
+                isComplete: true, confidence: 1)
+        }
+        let lower = stem(x: 0.40, top: 0.17), near = stem(x: 0.42, top: 0.17)
+        let stacked = stem(x: 0.42, top: 0.11), far = stem(x: 0.60, top: 0.17)
+        XCTAssertTrue(OCREventStemDetector.hasCompetingNeighbour(lower, among: [lower, near, far]))
+        XCTAssertFalse(OCREventStemDetector.hasCompetingNeighbour(lower, among: [lower, stacked, far]))
+        XCTAssertFalse(OCREventStemDetector.hasCompetingNeighbour(far, among: [lower, near, far]))
+    }
+
     func testBasalBlueExcludesPurpleInterfaceHighlight() {
         XCTAssertTrue(OCRPixelColor(red: 25, green: 143, blue: 255, alpha: 255).isTherapyBlue)
         XCTAssertFalse(OCRPixelColor(red: 190, green: 185, blue: 255, alpha: 255).isTherapyBlue)
@@ -500,6 +547,21 @@ final class AnalysisPipelineTests: XCTestCase {
         XCTAssertEqual(anchors.count, 2)
         XCTAssertEqual(anchors[0].x, 0.22, accuracy: 1e-9)
         XCTAssertEqual(anchors[1].x, 0.62, accuracy: 1e-9)
+    }
+
+    func testClockLabelClippedAtChartEdgeIsNoTimeAnchor() {
+        // "00:00" cut by the chart's left edge was read as a confident "10:00".
+        func label(_ text: String, x: Double) -> OCRRawTextObservation {
+            .init(region: .timeAxis, boundingBox: .init(x: x, y: 0.88, width: 0.046, height: 0.03),
+                candidates: [.init(text: text, confidence: 1)])
+        }
+        let clipped = [label("10:00", x: 0.1118), label("02:00", x: 0.249), label("04:00", x: 0.387)]
+        let anchors = OCRObservationInterpreter.timeAnchors(from: clipped, horizontalRange: 0.1117...0.8883)
+        XCTAssertEqual(anchors.map(\.minuteOfDay), [120, 240])
+        // A complete label centred on the edge gridline starts left of the frame.
+        let complete = [label("00:00", x: 0.089), label("02:00", x: 0.249)]
+        XCTAssertEqual(OCRObservationInterpreter.timeAnchors(
+            from: complete, horizontalRange: 0.1117...0.8883).map(\.minuteOfDay), [0, 120])
     }
 
     func testNearbyDuplicateClockLabelsDoNotCreateFalseDayRollover() throws {

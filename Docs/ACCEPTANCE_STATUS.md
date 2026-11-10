@@ -23,9 +23,9 @@ version only, never by attaching health data.
 ## Snapshot
 
 - **Commit:** `8263bd2` (main, PR #20)
-- **Analysis algorithm:** `native-1.12.0` (branch; `main` is `native-1.11.0`)
+- **Analysis algorithm:** `native-1.13.0` (branch; `main` is `native-1.11.0`)
 - **Computation model policy:** `openaps-exponential+loopkit-cob/1.2.3`
-- **Last reviewed:** 2026-11-09
+- **Last reviewed:** 2026-11-10
 - **Overall:** experimental internal QA only. Full release acceptance is **not**
   reached; `release_gates_confirmed` must not be set.
 
@@ -48,8 +48,8 @@ version only, never by attaching health data.
 | E1 | Unknown layouts rejected (`unsupportedLayout`) | 🟡 Synthetic only | `NativeAnalysisFailureTests` (Simulator) | 2026-11-04 |
 | E2 | Time/basal/glucose axis calibration and clock provenance | 🟡 Synthetic only | `AnalysisPipelineTests`, `ClockAlignedTimelineTests`; [REFERENCE_QA.md](REFERENCE_QA.md) | 2026-11-04 |
 | E3 | Capture marker stops observed therapy | 🟡 Synthetic only | `CaptureMarkerTests`; [CAPTURE_BOUNDARY.md](CAPTURE_BOUNDARY.md) | 2026-11-04 |
-| E4 | Event recognition (bolus/carbohydrate stems and amounts) on real screenshots | ⬜ Open | No private corpus result recorded. Synthetic only: `EventEvidenceTests`, `PillImagePreparationTests`, and the end-to-end `SyntheticEventAnalysisTests` (one bolus, one carbohydrate pill; CI result not yet recorded) | — |
-| E5 | Glucose accuracy on real screenshots | ⬜ Open | No private corpus result recorded | — |
+| E4 | Event recognition (bolus/carbohydrate stems and amounts) on real screenshots | ⬜ Open | No hold-out result recorded. A development check against a reference export exists as a private QA record (2026-11-10, TestFlight build with `native-1.12.0`, `compare_reference.py`); its screenshots were also used for tuning, so it is not acceptance evidence. Synthetic only: `EventEvidenceTests`, `PillImagePreparationTests`, and the end-to-end `SyntheticEventAnalysisTests` (one bolus, one carbohydrate pill; CI result not yet recorded) | — |
+| E5 | Glucose accuracy on real screenshots | ⬜ Open | No hold-out result recorded; private development check as in E4, not acceptance evidence | — |
 | E6 | Basal accuracy on real screenshots | ⛔ Blocked | Needs C1 (reference semantics) | — |
 | E7 | Numerical accuracy thresholds defined before evaluation | ⬜ Open | Thresholds are referenced in docs but not yet written down | — |
 | E8 | Extraction parameters frozen, then private hold-out evaluated once | ⬜ Open | Depends on E4–E7 | — |

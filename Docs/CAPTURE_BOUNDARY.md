@@ -17,3 +17,12 @@ a clock label is aligned to its gridline. The rule is darker than any gridline;
 a capture a few minutes after a labelled hour otherwise pulled that label onto
 the rule and failed the one-minute time residual
 (`testTimeLabelNearCaptureMarkerAlignsToGridlineNotMarker`).
+
+Native analysis 1.13.0 narrows the boundary rule for pills. A pill is drawn
+above the plot frame, where the capture rule and the future panel are never
+painted. A pill whose estimated region crosses the boundary is now read when,
+and only when, its outline is measured closed: flat base and top, both end
+arcs, and paper beyond each arc (`testPillOutlineIsMeasuredOnlyWhenClosed`).
+The measured outline then bounds the crop and the accepted text. Without that
+proof the amount stays unknown as before. The proof is geometric; recognition
+on such pills is not verified by a repository fixture.
