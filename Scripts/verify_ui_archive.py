@@ -116,10 +116,11 @@ def verify(path):
         incomplete = [row for row in computations.values() if not row["presentation"]["isComplete"]]
         require(bool(incomplete), "Critical incomplete computation was not retained")
         for row in incomplete:
-            require(all(value is None for value in row["presentation"]["metrics"].values()),
-                    "Incomplete presentation contains a number")
-            # This test removes basal. Independent known-zero bolus/COB remain
-            # internal diagnostics; the public presentation above withholds all four.
+            # This test removes basal. Only the categories that depend on it are
+            # withheld; independent known-zero bolus/COB remain presented.
+            require(all(row["presentation"]["metrics"].get(key) is None
+                        for key in ("basalIOB", "totalIOB")),
+                    "Incomplete basal presentation contains a basal or total number")
             require(all("available" not in row["run"]["result"]["current"][key]
                         for key in ("basalIOB", "totalIOB")),
                     "Unknown basal produced numeric basal/total IOB")

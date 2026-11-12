@@ -81,7 +81,7 @@ struct CaseDetailView: View {
                 Label(reason, systemImage: "exclamationmark.triangle.fill")
                     .font(.subheadline)
                     .foregroundStyle(.orange)
-                Text("Der Case ist gespeichert, aber IOB und aktive Kohlenhydrate bleiben gesperrt. Prüfe zuerst den Aufnahmezeitpunkt und die Zeitbeschriftungen. Bei fehlenden Basalabschnitten braucht die App einen vollständig sichtbaren Verlauf; eine nicht erkannte Menge lässt sich in „Korrigieren“ prüfen.")
+                Text("Der Case ist gespeichert. Gesperrt bleiben nur Werte, deren Daten noch unvollständig sind. Prüfe zuerst den Aufnahmezeitpunkt und die Zeitbeschriftungen. Bei fehlenden Basalabschnitten braucht die App einen vollständig sichtbaren Verlauf; eine nicht erkannte Menge lässt sich in „Korrigieren“ prüfen.")
                     .font(.footnote)
                     .foregroundStyle(.secondary)
             }
@@ -103,16 +103,27 @@ struct CaseDetailView: View {
     }
 
     private var metrics: some View {
-        let reason = presentation?.unavailableReasons.first
+        let fallback = presentation?.unavailableReasons.first
             ?? (record.status == .complete ? nil : "Kritische Daten sind noch nicht vollständig bestätigt.")
-        let values = presentation?.isComplete == true && record.status == .complete
-            ? presentation?.metrics
-            : nil
+        // Only incomplete categories are withheld. The numbers must belong to
+        // the run that set the case status, not to a superseded or failed one.
+        let values = presentationMatchesStatus ? presentation?.metrics : nil
+        let reasons = presentation?.metricUnavailableReasons
         return LazyVGrid(columns: [GridItem(.adaptive(minimum: 170), spacing: 12)], spacing: 12) {
-            MetricCard(title: "Basal IOB", value: values?.basalIOB, unit: "IE", tint: .blue, unavailableReason: values?.basalIOB == nil ? reason : nil)
-            MetricCard(title: "Bolus IOB", value: values?.bolusIOB, unit: "IE", tint: .indigo, unavailableReason: values?.bolusIOB == nil ? reason : nil)
-            MetricCard(title: "Gesamt IOB", value: values?.totalIOB, unit: "IE", tint: .purple, unavailableReason: values?.totalIOB == nil ? reason : nil)
-            MetricCard(title: "Aktive KH", value: values?.activeCarbohydrates, unit: "g", tint: .orange, unavailableReason: values?.activeCarbohydrates == nil ? reason : nil)
+            MetricCard(title: "Basal IOB", value: values?.basalIOB, unit: "IE", tint: .blue, unavailableReason: values?.basalIOB == nil ? (reasons?.basalIOB ?? fallback) : nil)
+            MetricCard(title: "Bolus IOB", value: values?.bolusIOB, unit: "IE", tint: .indigo, unavailableReason: values?.bolusIOB == nil ? (reasons?.bolusIOB ?? fallback) : nil)
+            MetricCard(title: "Gesamt IOB", value: values?.totalIOB, unit: "IE", tint: .purple, unavailableReason: values?.totalIOB == nil ? (reasons?.totalIOB ?? fallback) : nil)
+            MetricCard(title: "Aktive KH", value: values?.activeCarbohydrates, unit: "g", tint: .orange, unavailableReason: values?.activeCarbohydrates == nil ? (reasons?.activeCarbohydrates ?? fallback) : nil)
+        }
+    }
+
+    private var presentationMatchesStatus: Bool {
+        guard let presentation else { return false }
+        switch record.status {
+        case .complete: return presentation.isComplete
+        case .needsReview:
+            return !presentation.isComplete && record.reviewReason == presentation.unavailableReasons.first
+        default: return false
         }
     }
 

@@ -22,7 +22,9 @@ completeness policy without changing either numerical kernel. Screenshot-sourced
 data must contain continuous, non-overlapping basal intervals across the DIA
 ending at capture. Missing intervals are not zero delivery; zero delivery needs
 an explicit observed zero-rate interval. Gaps and overlaps withhold basal and
-total IOB. Public incomplete-case presentations withhold all four activity cards.
+total IOB. Since policy 1.3.0 only the affected cards are withheld, and a
+screenshot shorter than the DIA is checked from its first basal interval
+([ACTIVITY_QUALITY.md](ACTIVITY_QUALITY.md)).
 Only floating-point boundary noise up to one microsecond is tolerated.
 
 Forecasts validate that same frozen observation window, then decay the observed

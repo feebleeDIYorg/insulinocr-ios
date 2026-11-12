@@ -24,8 +24,8 @@ version only, never by attaching health data.
 
 - **Commit:** `6565f48` (main, PR #21)
 - **Analysis algorithm:** `native-1.13.0` (branch; `main` is `native-1.12.0`)
-- **Computation model policy:** `openaps-exponential+loopkit-cob/1.2.3`
-- **Last reviewed:** 2026-11-10
+- **Computation model policy:** `openaps-exponential+loopkit-cob/1.3.0` (branch; `main` is `1.2.3`)
+- **Last reviewed:** 2026-11-12
 - **Overall:** experimental internal QA only. Full release acceptance is **not**
   reached; `release_gates_confirmed` must not be set.
 
@@ -60,7 +60,7 @@ version only, never by attaching health data.
 |---|---|---|---|---|
 | T1 | Insulin IOB against original OpenAPS oracle (1,620 vectors, 1e-9 IE) | ✅ Passed | `TherapyReferenceMatrixTests`; [THERAPY_VALIDATION.md](THERAPY_VALIDATION.md) | 2026-11-04 |
 | T2 | COB boundary values and basal discretization bounds | ✅ Passed | `TherapyReferenceMatrixTests`, `TherapyModelsTests` | 2026-11-04 |
-| T3 | Fail-closed behaviour (unknown amounts, basal gaps/overlaps, invalid clock) | ✅ Passed | `ActiveWindowQualityTests`, `BasalCorrectionReviewTests`, `DomainReducerTests`; [ACTIVITY_QUALITY.md](ACTIVITY_QUALITY.md) | 2026-11-04 |
+| T3 | Fail-closed behaviour per category (unknown amounts, basal gaps/overlaps, invalid clock). Since policy 1.3.0 a screenshot shorter than the action window no longer withholds results | 🟡 Synthetic only | Changed on the branch on 2026-11-12; CI result for `TherapyModelsTests`, `BasalCorrectionReviewTests`, `ActiveWindowQualityTests`, `DomainReducerTests` not yet recorded; [ACTIVITY_QUALITY.md](ACTIVITY_QUALITY.md) | — |
 | T4 | Frozen reference time and forecast input | ✅ Passed | `FrozenForecastTests`, UI cold-reopen checks | 2026-11-04 |
 | T5 | Clinical validation | ⬜ Out of scope | The app is not a medical device; numerical tests are not clinical evidence | — |
 

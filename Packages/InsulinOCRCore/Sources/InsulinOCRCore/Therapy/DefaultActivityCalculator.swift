@@ -1,7 +1,7 @@
 import Foundation
 
 public struct DefaultActivityCalculator: ActivityCalculator {
-    public static let modelVersion = "openaps-exponential+loopkit-cob/1.2.3"
+    public static let modelVersion = "openaps-exponential+loopkit-cob/1.3.0"
 
     public init() {}
 
@@ -65,24 +65,15 @@ public struct DefaultActivityCalculator: ActivityCalculator {
                 basalIOB: .unavailable(.invalidModelParameters), bolusIOB: .unavailable(.invalidModelParameters),
                 totalIOB: .unavailable(.invalidModelParameters), cob: .unavailable(.invalidModelParameters))
         }
-        let requiredHistory = Double(max(settings.diaMinutes,
-            settings.carbAbsorptionMinutes + Int(CarbohydrateAbsorptionModel.delayMinutes)))
-        if data.sourceAnalysisRunID != nil || data.observedHistoryMinutes != nil {
-            guard let history = data.observedHistoryMinutes,
-                  history.isFinite, history >= requiredHistory else {
-                return ActivitySnapshot(date: date,
-                    basalIOB: .unavailable(.insufficientHistory),
-                    bolusIOB: .unavailable(.insufficientHistory),
-                    totalIOB: .unavailable(.insufficientHistory),
-                    cob: .unavailable(.insufficientHistory))
-            }
-        }
+        // A screenshot shorter than the action windows no longer withholds
+        // results: each category is computed from what the screenshot shows.
+        // Doses older than the visible history are not part of the result.
         let basalIOB: MetricResult
         if let reason = unavailableReason(for: .basal, issues: data.unresolvedIssues) {
             basalIOB = .unavailable(reason)
         } else if (data.sourceAnalysisRunID != nil || data.observedHistoryMinutes != nil)
             && !hasCompleteBasalCoverage(data.basalSegments, at: coverageReferenceDate,
-                durationMinutes: settings.diaMinutes) {
+                durationMinutes: settings.diaMinutes, observedHistoryMinutes: data.observedHistoryMinutes) {
             basalIOB = .unavailable(.incompleteBasalPath)
         } else {
             basalIOB = .available(
@@ -143,11 +134,16 @@ public struct DefaultActivityCalculator: ActivityCalculator {
     private func hasCompleteBasalCoverage(
         _ segments: [BasalSegment],
         at referenceDate: Date,
-        durationMinutes: Int
+        durationMinutes: Int,
+        observedHistoryMinutes: Double?
     ) -> Bool {
         guard durationMinutes > 0, referenceDate.timeIntervalSinceReferenceDate.isFinite else { return false }
+        let observedStart = observedHistoryMinutes.flatMap { minutes in
+            minutes.isFinite && minutes > 0 ? referenceDate.addingTimeInterval(-minutes * 60) : nil
+        }
         return BasalCoverageValidator.isComplete(segments, in: DateInterval(
-            start: referenceDate.addingTimeInterval(-Double(durationMinutes) * 60), end: referenceDate))
+            start: referenceDate.addingTimeInterval(-Double(durationMinutes) * 60), end: referenceDate),
+            observedStart: observedStart)
     }
 
     public func bolusIOB(

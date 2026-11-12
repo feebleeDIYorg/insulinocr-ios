@@ -201,7 +201,8 @@ public struct DefaultEffectiveDataReducer: EffectiveDataReducer {
 
         if let window, (explicitlyReviewedBasal || (activity != nil && trustworthyClock)), !invalidBasalObservation,
            !issues.contains(.invalidTimeAxis), !issues.contains(.invalidBasalAxis),
-           BasalCoverageValidator.isComplete(basalSegments, in: window) {
+           BasalCoverageValidator.isComplete(basalSegments, in: window,
+               observedStart: analysisRun.calibration.timeStart) {
             // Resolve only the effective coverage issue; immutable raw quality stays intact.
             issues.remove(.incompleteBasalPath)
         }
