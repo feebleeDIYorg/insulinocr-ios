@@ -78,7 +78,7 @@ mode verifies existing signing credentials without uploading.
 For early device testing and feedback before full OCR/device/performance
 acceptance, run **4. Build and TestFlight** with `release_gates_confirmed`
 unchecked and approve the protected Environment. Release notes are optional;
-without them the main commit subject and short SHA are used. The notes
+without them the delivered commit subject and short SHA are used. The notes
 automatically identify the build as experimental, the outstanding acceptance and
 its restriction to QA rather than therapy decisions. This does not complete the
 product acceptance. No clinical calculation or incomplete-data safeguard changes.
@@ -91,11 +91,14 @@ fails, run the workflow again; it uploads a new build with the next number.
 Delivery always disables external review and creates German test notes, even
 when the first build has no localizations.
 
-After all release gates pass, check `release_gates_confirmed`, enter concise
-release notes and approve the Environment again. Both variants:
+The same experimental QA variant can be dispatched from the `dev` branch to test
+changes before they reach `main`. `dev` never delivers a release-gated build.
+
+After all release gates pass, check `release_gates_confirmed` on `main`, enter
+concise release notes and approve the Environment again. Both variants:
 
 1. verifies the exact Xcode build;
-2. verifies successful package, app, integration and UI CI on the exact main commit;
+2. verifies successful package, app, integration and UI CI on the exact delivered commit;
 3. reads Match with `readonly: true`;
 4. selects the next build number from App Store Connect;
 5. archives and uploads to `InsulinOCR Internal`.

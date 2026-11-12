@@ -4,12 +4,12 @@ on:
   workflow_dispatch:
     inputs:
       release_gates_confirmed:
-        description: Leave unchecked for an experimental internal QA build. Check only after the documented device, OCR, math, performance and privacy release gates pass
+        description: Leave unchecked for an experimental internal QA build (always on dev). Check only on main after the documented device, OCR, math, performance and privacy release gates pass
         required: true
         type: boolean
         default: false
       release_notes:
-        description: Optional internal TestFlight notes; defaults to the main commit subject
+        description: Optional internal TestFlight notes; defaults to the delivered commit subject
         required: false
         default: ""
         type: string
@@ -24,7 +24,8 @@ concurrency:
 
 jobs:
   upload:
-    if: github.ref == 'refs/heads/main'
+    # dev delivers experimental QA builds only; the delivery policy rejects release-gated uploads from it.
+    if: github.ref == 'refs/heads/main' || github.ref == 'refs/heads/dev'
     runs-on: xcode-27
     timeout-minutes: 90
     environment: testflight
@@ -83,7 +84,7 @@ jobs:
           bundle exec ruby -e 'abort unless Gem::Specification.find_by_name("fastlane").version.to_s == "2.241.1"'
           git diff --exit-code -- Gemfile.lock
 
-      - name: Require successful CI for the exact main commit
+      - name: Require successful CI for the exact delivered commit
         env:
           GITHUB_TOKEN: ${{ github.token }}
         run: python3 Scripts/verify_delivery_ci.py

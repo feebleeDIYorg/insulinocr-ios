@@ -12,6 +12,13 @@ class PublicDeliveryTests(unittest.TestCase):
         self.assertNotIn('secrets.', workflow)
         self.assertNotIn('pull_request_target', workflow)
 
+    def test_ci_covers_every_delivery_branch(self):
+        from verify_delivery_ci import DELIVERY_BRANCHES
+        workflow = (ROOT / '.github/workflows/ci.yml').read_text()
+        self.assertEqual(workflow.count('branches: [' + ', '.join(DELIVERY_BRANCHES) + ']'), 2)
+        policy = (ROOT / 'fastlane/lib/insulinocr_setup_policy.rb').read_text()
+        self.assertIn('DELIVERY_BRANCHES = %w[' + ' '.join(DELIVERY_BRANCHES) + '].freeze', policy)
+
     def test_every_action_is_pinned_to_a_commit(self):
         for path in (ROOT / '.github/workflows').glob('*.yml'):
             for action in re.findall(r'uses:\s*([^\s#]+)', path.read_text()):
@@ -22,7 +29,7 @@ class PublicDeliveryTests(unittest.TestCase):
         boundary = workflow.index('- name: Upload internal TestFlight build')
         self.assertNotIn('secrets.', workflow[:boundary])
         self.assertNotIn('upload-artifact', workflow)
-        self.assertIn("github.ref == 'refs/heads/main'", workflow)
+        self.assertIn("if: github.ref == 'refs/heads/main' || github.ref == 'refs/heads/dev'\n", workflow)
         self.assertIn('environment: testflight', workflow)
         self.assertIn('workflow_dispatch:', workflow)
 
@@ -32,7 +39,8 @@ class PublicDeliveryTests(unittest.TestCase):
             boundary = text.index('- name: Run protected setup operation')
             self.assertNotIn('secrets.', text[:boundary])
             self.assertIn('environment: testflight', text)
-            self.assertIn("github.ref == 'refs/heads/main'", text)
+            self.assertIn("if: github.ref == 'refs/heads/main'\n", text)
+            self.assertNotIn('refs/heads/dev', text)
             self.assertNotIn('upload-artifact', text)
         setup = (ROOT / '.github/workflows/create_profiles.yml').read_text()
         self.assertIn('default: check', setup)

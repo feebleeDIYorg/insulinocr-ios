@@ -12,6 +12,14 @@ class DeliveryCITests(unittest.TestCase):
     def test_accepts_exact_main_success(self):
         self.assertEqual(verified_ci_run({"workflow_runs": [self.run]}, self.sha, self.repo), 12)
 
+    def test_accepts_exact_dev_success_for_dev_only(self):
+        dev = self.run | dict(head_branch="dev")
+        self.assertEqual(verified_ci_run({"workflow_runs": [dev]}, self.sha, self.repo, "dev"), 12)
+        for runs, branch in [([self.run], "dev"), ([dev], "main"), ([dev], "other"),
+                             ([self.run | dict(head_branch="other")], "other")]:
+            with self.subTest(branch=branch), self.assertRaises(ValueError):
+                verified_ci_run({"workflow_runs": runs}, self.sha, self.repo, branch)
+
     def test_rejects_wrong_head_fork_or_pull_request(self):
         for changes in [dict(head_sha="b" * 40), dict(head_branch="other"), dict(event="pull_request"),
                         dict(head_repository={"full_name": "fork/app"}), dict(conclusion="skipped"),
