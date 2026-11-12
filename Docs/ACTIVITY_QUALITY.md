@@ -1,6 +1,6 @@
 # Quality at the frozen calculation time
 
-Model policy `openaps-exponential+loopkit-cob/1.2.3` assesses uncertainty against
+Model policy `openaps-exponential+loopkit-cob/1.2.3` (and later) assesses uncertainty against
 the saved reference date and the selected action durations. It does not change
 the insulin or carbohydrate formulas.
 
@@ -29,3 +29,32 @@ Older payloads without these optional fields continue to decode. The legacy
 reducer remains conservative and does not expire uncertainty without explicit
 calculation context. Raw OCR release acceptance and full-case QA remain separate
 from a complete activity window.
+
+## Policy 1.3.0: results per category, no action-window history rule
+
+Model policy `openaps-exponential+loopkit-cob/1.3.0` removes the requirement
+that the screenshot covers the longer of DIA and carbohydrate absorption plus
+delay. Earlier policies withheld all four results (`insufficientHistory`) for a
+shorter screenshot; the reason code remains decodable for stored runs.
+
+Each category is now released on its own data:
+
+- **Basal IOB** needs gap-free, non-overlapping basal intervals from the start
+  of the DIA window, or, when the screenshot is shorter than the DIA, from the
+  first basal interval, which must begin within five minutes of the first
+  observed instant. Interior gaps, overlaps and a path that does not reach the
+  reference date still withhold it. Nothing is filled in.
+- **Bolus IOB** and **active carbohydrates** need every event of their kind to
+  have a known or confirmed amount. An unclassified event withholds both,
+  because it can belong to either.
+- **Total IOB** needs basal and bolus IOB.
+- An invalid time axis withholds every category.
+
+The app shows each released category even while another is withheld and gives
+the reason on the withheld card. Decay charts and simulation still require all
+categories.
+
+Consequence, by the owner's decision: with a screenshot shorter than the action
+window, insulin and carbohydrates delivered before the visible history are not
+part of the result. Such a value is a lower bound of the modelled quantity, and
+the app does not mark it.

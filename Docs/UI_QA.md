@@ -53,8 +53,9 @@ while retaining prior immutable history, then requires complete analysis.
 It changes a basal amount and
 saves a uniquely named simulation with 1 U bolus and 15 g carbohydrate at the
 frozen reference. It checks the scenario deltas and unchanged baseline values.
-It then removes the basal amount: all four activity cards must become
-unavailable, both decay charts disappear and simulation is disabled. A further
+It then removes the basal amount: basal and total IOB must become
+unavailable while bolus IOB and active carbohydrates stay, both decay charts
+disappear and simulation is disabled. A further
 immutable revision restores the amount. The test exports through the actual
 share sheet, then performs three cold relaunches. Each reopening must retain
 the corrected value and frozen date and render every therapy/decay chart. The

@@ -88,7 +88,7 @@ final class BasalCorrectionReviewTests: XCTestCase {
         XCTAssertNil(run.observations.last?.amount)
     }
 
-    func testCorrectionCannotInventMissingScreenshotHistory() throws {
+    func testShortScreenshotHistoryDoesNotWithholdCompleteCategories() throws {
         let run = makeRun([base], historyMinutes: 30)
         let fill = basal(start: reference.addingTimeInterval(-30), end: reference, rate: 1, provenance: .userCorrection)
         let revision = CorrectionRevision(caseID: run.caseID, analysisRunID: run.id, operations: [.add(fill)])
@@ -96,7 +96,7 @@ final class BasalCorrectionReviewTests: XCTestCase {
         let settings = try TherapySettings(diaMinutes: 360, insulinType: .fiasp, carbAbsorptionMinutes: 240)
         let snapshot = DefaultActivityCalculator().snapshot(data: result, settings: settings, date: reference)
         for metric in [snapshot.basalIOB, snapshot.bolusIOB, snapshot.totalIOB, snapshot.cob] {
-            XCTAssertEqual(metric, .unavailable(.insufficientHistory))
+            XCTAssertNotNil(metric.value)
         }
     }
 

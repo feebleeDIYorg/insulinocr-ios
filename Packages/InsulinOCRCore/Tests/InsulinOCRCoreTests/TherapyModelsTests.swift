@@ -63,26 +63,44 @@ final class TherapyModelsTests: XCTestCase {
         XCTAssertEqual(try XCTUnwrap(result.forecast.last?.totalIOB.value), 0, accuracy: 1e-9)
     }
 
-    func testScreenshotHistoryMustCoverBothActionWindowsIncludingCarbDelay() throws {
+    func testShortScreenshotHistoryWithholdsOnlyIncompleteCategories() throws {
         let settings = try TherapySettings(diaMinutes: 180, insulinType: .fiasp, carbAbsorptionMinutes: 240)
         let calculator = DefaultActivityCalculator()
-        for minutes in [nil, 60.0, 249.999] as [Double?] {
-            let data = EffectiveTherapyData(basalSegments: [], boluses: [], carbohydrates: [],
-                glucoseSamples: [], sourceAnalysisRunID: UUID(), observedHistoryMinutes: minutes)
-            let result = calculator.calculate(data: data, settings: settings, referenceDate: Date())
-            XCTAssertEqual(result.current.totalIOB, .unavailable(.insufficientHistory))
-            XCTAssertEqual(result.current.cob, .unavailable(.insufficientHistory))
-            XCTAssertTrue(result.forecast.allSatisfy { $0.totalIOB.value == nil && $0.cob.value == nil })
-            let simulated = SimulationCalculator.applying(events: [], to: data)
-            XCTAssertEqual(simulated.observedHistoryMinutes, minutes)
-        }
         let reference = Date(timeIntervalSince1970: 1_800_000_000)
-        let enough = EffectiveTherapyData(basalSegments: [
-            .init(startDate: reference.addingTimeInterval(-15_000),
-                  endDate: reference, unitsPerHour: 0),
-        ], boluses: [], carbohydrates: [],
-            glucoseSamples: [], sourceAnalysisRunID: UUID(), observedHistoryMinutes: 250)
-        XCTAssertEqual(calculator.snapshot(data: enough, settings: settings, date: reference).totalIOB, .available(0))
+        func data(basalStartMinutes: Double?, history: Double?) -> EffectiveTherapyData {
+            let segments: [BasalSegment] = basalStartMinutes.map { minutes in
+                [BasalSegment(startDate: reference.addingTimeInterval(-minutes * 60),
+                              endDate: reference, unitsPerHour: 0)]
+            } ?? []
+            return EffectiveTherapyData(basalSegments: segments, boluses: [.init(date: reference.addingTimeInterval(-600), units: 1)],
+                carbohydrates: [.init(date: reference.addingTimeInterval(-600), grams: 20)],
+                glucoseSamples: [], sourceAnalysisRunID: UUID(), observedHistoryMinutes: history)
+        }
+        // One visible hour, basal identified from its start: every category is shown.
+        for start in [60.0, 56] {
+            let result = calculator.calculate(data: data(basalStartMinutes: start, history: 60),
+                settings: settings, referenceDate: reference)
+            XCTAssertEqual(result.current.basalIOB, .available(0))
+            XCTAssertNotNil(result.current.bolusIOB.value)
+            XCTAssertNotNil(result.current.totalIOB.value)
+            XCTAssertNotNil(result.current.cob.value)
+            XCTAssertTrue(result.forecast.allSatisfy { $0.totalIOB.value != nil && $0.cob.value != nil })
+        }
+        // Basal missing, starting late, or without known history: only basal
+        // and the total that depends on it stay withheld.
+        for incomplete in [data(basalStartMinutes: nil, history: 60), data(basalStartMinutes: 50, history: 60),
+                           data(basalStartMinutes: 60, history: nil)] {
+            let current = calculator.calculate(data: incomplete, settings: settings, referenceDate: reference).current
+            XCTAssertEqual(current.basalIOB, .unavailable(.incompleteBasalPath))
+            XCTAssertEqual(current.totalIOB, .unavailable(.incompleteBasalPath))
+            XCTAssertNotNil(current.bolusIOB.value)
+            XCTAssertNotNil(current.cob.value)
+        }
+        // A window fully inside the screenshot is still checked without tolerance.
+        let late = data(basalStartMinutes: 179, history: 250)
+        XCTAssertEqual(calculator.snapshot(data: late, settings: settings, date: reference).basalIOB,
+            .unavailable(.incompleteBasalPath))
+        XCTAssertEqual(SimulationCalculator.applying(events: [], to: late).observedHistoryMinutes, 250)
     }
 
     func testTherapySettingsEnforceSupportedSteps() throws {

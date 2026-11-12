@@ -13,7 +13,7 @@ public struct NativeAnalysisConfiguration: Sendable, Equatable {
     public let maximumTimeResidualMinutes: Double
 
     public init(
-        algorithmVersion: String = "native-1.12.0",
+        algorithmVersion: String = "native-1.13.0",
         minimumBasalCoverage: Double = 0.99,
         maximumTimeResidualMinutes: Double = 1
     ) {
@@ -261,10 +261,22 @@ public actor NativeAnalysisEngine: AnalysisEngine {
         var therapyEvents: [OCRTherapyEvent] = []
         for stem in stems where stem.isComplete {
             try Task.checkCancellation()
-            let clippedPill = stem.pillRect.maxX > layout.dataRightEdgeX
-            let pillRegion = OCRNormalizedRect(x: stem.pillRect.minX, y: stem.pillRect.minY,
+            // A pill is drawn above the plot frame, so the capture rule never
+            // paints over it. One estimated to cross the boundary is read only
+            // when its outline is measured closed; otherwise it stays unknown.
+            let crossesBoundary = stem.pillRect.maxX > layout.dataRightEdgeX
+            let closedPill = crossesBoundary
+                ? OCREventStemDetector.closedPillRect(above: stem, image: pixelImage) : nil
+            let clippedPill = crossesBoundary && closedPill == nil
+            let textRightEdge = closedPill?.maxX ?? layout.dataRightEdgeX
+            let pillRegion = closedPill ?? OCRNormalizedRect(x: stem.pillRect.minX, y: stem.pillRect.minY,
                 width: max(0, min(stem.pillRect.maxX, layout.dataRightEdgeX) - stem.pillRect.minX),
                 height: stem.pillRect.height)
+            // Overlapping pills share pixels: a crop split between two stems
+            // can cut a leading digit ("80 g" read as "30 g"). Text touching
+            // such a crop's edge is not evidence, and agreeing low-confidence
+            // passes over the same cut pixels are not corroboration.
+            let crowded = OCREventStemDetector.hasCompetingNeighbour(stem, among: stems)
             // A clipped multi-digit label can look like a confident smaller
             // amount. Keep its complete stem unknown rather than parsing it.
             let pillObservations: [OCRRawTextObservation] = clippedPill ? [] : try recognizeText(
@@ -275,9 +287,15 @@ public actor NativeAnalysisEngine: AnalysisEngine {
             )
             rawObservations += pillObservations
             latestObservations = rawObservations
-            let evidence: [OCRRawTextObservation] = clippedPill ? [] : (pillObservations + OCRObservationInterpreter.eventTextEvidence(
+            let inside = pillObservations.filter {
+                $0.boundingBox.maxX <= textRightEdge && (!crowded || Self.isUnclippedPillText(
+                    $0.boundingBox, in: pillRegion, imageWidth: cgImage.width, imageHeight: cgImage.height))
+            }
+            let insideIDs = Set(pillObservations.map(\.id))
+            let wholeImage: [OCRRawTextObservation] = clippedPill ? [] : OCRObservationInterpreter.eventTextEvidence(
                 from: rawObservations, for: stem, among: stems
-            )).filter { $0.boundingBox.maxX <= layout.dataRightEdgeX }
+            ).filter { !insideIDs.contains($0.id) && $0.boundingBox.maxX <= textRightEdge }
+            let evidence = inside + wholeImage
             var candidates = evidence
                 .flatMap(\.candidates)
                 .sorted { $0.confidence > $1.confidence }
@@ -290,21 +308,19 @@ public actor NativeAnalysisEngine: AnalysisEngine {
                 rawObservations += enhanced
                 latestObservations = rawObservations
                 let usable = enhanced.filter {
-                    $0.boundingBox.maxX <= layout.dataRightEdgeX &&
-                    Self.isUnclippedPillText($0.boundingBox, in: stem.pillRect,
+                    $0.boundingBox.maxX <= textRightEdge &&
+                    Self.isUnclippedPillText($0.boundingBox, in: closedPill ?? stem.pillRect,
                         imageWidth: cgImage.width, imageHeight: cgImage.height)
                 }
                 candidates += usable.flatMap(\.candidates)
                 candidates.sort { $0.confidence > $1.confidence }
                 evidenceIDs += usable.map(\.id)
                 parsed = OCRTextParser.amount(from: candidates, expectedKind: stem.kind)
-                if parsed.0.value == nil {
+                if parsed.0.value == nil && !crowded {
                     // Original crop, uncropped image and enhanced crop.
-                    let inside = pillObservations.filter { $0.boundingBox.maxX <= layout.dataRightEdgeX }
-                    let insideIDs = Set(inside.map(\.id))
                     parsed = OCRTextParser.corroboratedAmount(fromPasses: [
                         inside.flatMap(\.candidates),
-                        evidence.filter { !insideIDs.contains($0.id) }.flatMap(\.candidates),
+                        wholeImage.flatMap(\.candidates),
                         usable.flatMap(\.candidates),
                     ], expectedKind: stem.kind)
                     corroborated = parsed.0.value != nil
@@ -316,7 +332,7 @@ public actor NativeAnalysisEngine: AnalysisEngine {
                     date: timeline.date(atX: stem.stemRect.midX),
                     amount: parsed.0,
                     stemBoundingBox: stem.stemRect,
-                    pillBoundingBox: stem.pillRect,
+                    pillBoundingBox: closedPill ?? stem.pillRect,
                     isCompleteStem: true,
                     candidates: candidates,
                     confidence: min(stem.confidence, parsed.2 == 0 ? stem.confidence * 0.65 : parsed.2),

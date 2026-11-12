@@ -98,6 +98,16 @@ corroborated acceptance. The passes share the same pixels and recognizer, so
 this is agreement, not independent proof. The rule was motivated by a single
 private screenshot and is not validated on a corpus (gate E4 stays open).
 
+Native analysis 1.13.0 adds three fail-closed refinements. A clock label that
+starts exactly on the chart's left edge is clipped by CamAPS and is no time
+anchor (a cut "00:00" was read as a confident "10:00"). A pill crossing the
+capture boundary is read only with a measured closed outline
+([CAPTURE_BOUNDARY.md](CAPTURE_BOUNDARY.md)). When two stems on the same label
+row are close enough for their pills to overlap, text touching the edge of the
+split crop is discarded and low-confidence corroboration is disabled: a split
+crop can cut a leading digit, and passes over the same cut pixels would agree
+on the wrong amount. Such events stay unknown until reviewed.
+
 Known landscape layouts from 1 to 48 hours are supported. Unknown layouts are
 rejected as `unsupportedLayout`. A fully visible event stem with an uncertain
 amount becomes `amountUnknown` and blocks the relevant IOB or COB component.

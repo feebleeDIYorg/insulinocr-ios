@@ -105,8 +105,9 @@ final class ScreenshotFlowUITests: XCTestCase {
         XCTAssertEqual(metric("Bolus IOB", in: app).label, "Bolus IOB, 0.00, IE")
         XCTAssertEqual(metric("Aktive KH", in: app).label, "Aktive KH, 0.00, g")
 
-        // Removing a critical amount must hide every activity result, including
-        // saved simulations, until a further immutable revision restores it.
+        // Removing the basal amount withholds basal and total IOB, simulations
+        // and the decay charts until a further immutable revision restores it.
+        // Bolus IOB and active carbohydrates rest on complete data and stay.
         app.buttons["Korrigieren"].tap()
         XCTAssertTrue(amount.waitForExistence(timeout: 5), app.debugDescription)
         replace(amount, with: "")
@@ -115,9 +116,11 @@ final class ScreenshotFlowUITests: XCTestCase {
             format: "label BEGINSWITH %@", "Basal IOB, Nicht verfügbar"
         )).firstMatch
         XCTAssertTrue(unavailable.waitForExistence(timeout: 10), app.debugDescription)
-        for title in ["Basal IOB", "Bolus IOB", "Gesamt IOB", "Aktive KH"] {
+        for title in ["Basal IOB", "Gesamt IOB"] {
             XCTAssertTrue(metric(title, in: app).label.contains("Nicht verfügbar"))
         }
+        XCTAssertEqual(metric("Bolus IOB", in: app).label, "Bolus IOB, 0.00, IE")
+        XCTAssertEqual(metric("Aktive KH", in: app).label, "Aktive KH, 0.00, g")
         let simulationNeedsOverflow = !app.buttons["Simulation"].exists
         XCTAssertFalse(toolbarAction("Simulation", in: app).isEnabled)
         if simulationNeedsOverflow {

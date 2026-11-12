@@ -410,15 +410,16 @@ final class AppModel {
         let observationConfidence = Dictionary(
             uniqueKeysWithValues: analysisRun.observations.map { ($0.id, $0.confidence.overall) }
         )
+        func reason(_ result: MetricResult) -> String? {
+            guard case .unavailable(let reason) = result else { return nil }
+            return Self.localizedUnavailableReason(reason)
+        }
         let reasons = [
             run.result.current.basalIOB,
             run.result.current.bolusIOB,
             run.result.current.totalIOB,
             run.result.current.cob,
-        ].compactMap { result -> String? in
-            guard case .unavailable(let reason) = result else { return nil }
-            return Self.localizedUnavailableReason(reason)
-        }
+        ].compactMap(reason)
         let isComplete = reasons.isEmpty
 
         let glucose = effectiveData.glucoseSamples.map { sample in
@@ -506,10 +507,18 @@ final class AppModel {
             isComplete: isComplete,
             unavailableReasons: Array(Set(reasons)).sorted(),
             metrics: .init(
-                basalIOB: isComplete ? run.result.current.basalIOB.value : nil,
-                bolusIOB: isComplete ? run.result.current.bolusIOB.value : nil,
-                totalIOB: isComplete ? run.result.current.totalIOB.value : nil,
-                activeCarbohydrates: isComplete ? run.result.current.cob.value : nil
+                // Each category stands on its own data: a complete one is
+                // shown even while another is still withheld.
+                basalIOB: run.result.current.basalIOB.value,
+                bolusIOB: run.result.current.bolusIOB.value,
+                totalIOB: run.result.current.totalIOB.value,
+                activeCarbohydrates: run.result.current.cob.value
+            ),
+            metricUnavailableReasons: .init(
+                basalIOB: reason(run.result.current.basalIOB),
+                bolusIOB: reason(run.result.current.bolusIOB),
+                totalIOB: reason(run.result.current.totalIOB),
+                activeCarbohydrates: reason(run.result.current.cob)
             ),
             glucose: glucose,
             basal: basal,

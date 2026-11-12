@@ -39,8 +39,12 @@ import ZIPFoundation
         try await app.applyCorrection(revision)
         let stillIncomplete = try current(record: record, library: library)
         XCTAssertFalse(stillIncomplete.presentation.isComplete)
-        let hidden = stillIncomplete.presentation.metrics
-        XCTAssertTrue([hidden.basalIOB, hidden.bolusIOB, hidden.totalIOB, hidden.activeCarbohydrates].allSatisfy { $0 == nil })
+        // The basal gap withholds basal and total; bolus and carbohydrates stand on their own data.
+        let partialMetrics = stillIncomplete.presentation.metrics
+        XCTAssertNil(partialMetrics.basalIOB)
+        XCTAssertNil(partialMetrics.totalIOB)
+        XCTAssertEqual(partialMetrics.bolusIOB, 0)
+        XCTAssertEqual(partialMetrics.activeCarbohydrates, 0)
         let full = entry(id: partial.id, start: capture.addingTimeInterval(-480), end: capture)
         let confirmed = CorrectionRevision(caseID: record.id, analysisRunID: raw.id, parentRevisionID: revision.id,
             operations: [.update(targetID: partial.id, replacement: full)])

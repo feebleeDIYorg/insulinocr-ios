@@ -604,24 +604,83 @@ enum OCREventStemDetector {
     }
 
     /// Pixel centre of the flat light-grey pill outline directly above a stem.
-    static func pillBaseCenterX(above stem: OCRDetectedEventStem, image: OCRPixelImage) -> Double? {
+    private static func isPillOutline(_ color: OCRPixelColor) -> Bool {
+        let low = min(color.red, color.green, color.blue)
+        let high = max(color.red, color.green, color.blue)
+        return low >= 170 && high <= 240 && high - low <= 16
+    }
+
+    /// Widest light-grey outline run directly above the stem top.
+    static func pillBaseRun(
+        above stem: OCRDetectedEventStem, image: OCRPixelImage
+    ) -> (lower: Int, upper: Int, y: Int)? {
         let rect = image.pixelRect(for: stem.stemRect)
         let column = rect.x + rect.width / 2
-        func isOutline(_ color: OCRPixelColor) -> Bool {
-            let low = min(color.red, color.green, color.blue)
-            let high = max(color.red, color.green, color.blue)
-            return low >= 170 && high <= 240 && high - low <= 16
-        }
-        var best: (lower: Int, upper: Int)?
-        for y in max(0, rect.y - 3)..<rect.y where isOutline(image[column, y]) {
+        var best: (lower: Int, upper: Int, y: Int)?
+        for y in max(0, rect.y - 3)..<rect.y where isPillOutline(image[column, y]) {
             var lower = column, upper = column
-            while lower > 0, isOutline(image[lower - 1, y]) { lower -= 1 }
-            while upper < image.width - 1, isOutline(image[upper + 1, y]) { upper += 1 }
-            if upper - lower > (best.map { $0.upper - $0.lower } ?? 0) { best = (lower, upper) }
+            while lower > 0, isPillOutline(image[lower - 1, y]) { lower -= 1 }
+            while upper < image.width - 1, isPillOutline(image[upper + 1, y]) { upper += 1 }
+            if upper - lower > (best.map { $0.upper - $0.lower } ?? 0) { best = (lower, upper, y) }
         }
         // A pill base is far wider than a stem; anything shorter is no outline.
         guard let run = best, run.upper - run.lower >= max(12, image.height / 60) else { return nil }
-        return Double(run.lower + run.upper + 1) / 2
+        return run
+    }
+
+    static func pillBaseCenterX(above stem: OCRDetectedEventStem, image: OCRPixelImage) -> Double? {
+        pillBaseRun(above: stem, image: image).map { Double($0.lower + $0.upper + 1) / 2 }
+    }
+
+    /// Measured bounds of the pill above a stem, only when its outline is
+    /// closed: flat base and top, both end arcs, and paper beyond each arc.
+    /// An outline cut by a neighbouring pill or an image edge returns nil.
+    static func closedPillRect(above stem: OCRDetectedEventStem, image: OCRPixelImage) -> OCRNormalizedRect? {
+        guard let base = pillBaseRun(above: stem, image: image) else { return nil }
+        let needed = (base.upper - base.lower + 1) * 4 / 5
+        var top: Int?
+        let nearest = base.y - Int(Double(image.height) * 0.02)
+        let farthest = max(0, base.y - Int(Double(image.height) * 0.07))
+        guard nearest > farthest else { return nil }
+        for y in stride(from: nearest, to: farthest, by: -1) {
+            var count = 0
+            for x in base.lower...base.upper where isPillOutline(image[x, y]) { count += 1 }
+            if count >= needed { top = y } else if top != nil { break }
+        }
+        guard let top else { return nil }
+        let radius = (base.y - top + 1) / 2, middle = (base.y + top) / 2
+        func arcEnd(from start: Int, step: Int) -> Int? {
+            var last: Int?
+            for offset in 1..<(radius + 5) {
+                let x = start + step * offset
+                guard (0..<image.width).contains(x) else { return nil }
+                if isPillOutline(image[x, middle]) { last = x }
+            }
+            guard let last else { return nil }
+            for offset in 2..<6 {
+                let x = last + step * offset
+                guard (0..<image.width).contains(x) else { return nil }
+                let color = image[x, middle]
+                guard min(color.red, color.green, color.blue) >= 245 else { return nil }
+            }
+            return last
+        }
+        guard let left = arcEnd(from: base.lower, step: -1),
+              let right = arcEnd(from: base.upper, step: 1) else { return nil }
+        return OCRNormalizedRect(
+            x: Double(left) / Double(image.width), y: Double(top) / Double(image.height),
+            width: Double(right - left + 1) / Double(image.width),
+            height: Double(base.y - top + 1) / Double(image.height))
+    }
+
+    /// Another stem on the same label row close enough that the two pills
+    /// can overlap; the crop of either may then cut the other's glyphs.
+    static func hasCompetingNeighbour(_ stem: OCRDetectedEventStem, among stems: [OCRDetectedEventStem]) -> Bool {
+        stems.contains {
+            $0.stemRect != stem.stemRect
+                && abs($0.stemRect.minY - stem.stemRect.minY) < 0.015
+                && abs($0.stemRect.midX - stem.stemRect.midX) < 0.08
+        }
     }
 
     static func recoverStackedBolusStems(
