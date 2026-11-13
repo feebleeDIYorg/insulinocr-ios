@@ -39,6 +39,31 @@ enum OCRTextParser {
         pattern: #"^\s*([0-9]{1,3}(?:[.,][0-9])?)\s*g\s*$"#,
         options: [.caseInsensitive]
     )
+    // A known kind (label row or stem colour) makes the unit redundant.
+    private static let bareBolusExpression = try! NSRegularExpression(
+        pattern: #"^\s*([0-9]{1,2}(?:[.,][0-9]{1,2})?)\s*$"#
+    )
+    private static let bareCarbohydrateExpression = try! NSRegularExpression(
+        pattern: #"^\s*([0-9]{1,3}(?:[.,][0-9])?)\s*$"#
+    )
+    // Vision reads a trailing "g" as "9" ("4 g" as "49"). Without a unit such
+    // a whole number is indistinguishable from that misreading.
+    private static let trailingNineExpression = try! NSRegularExpression(pattern: #"^\s*[0-9]*9\s*$"#)
+
+    private static func bolusAmount(in text: String, unitRequired: Bool) -> Double? {
+        let amount = parseNumber(in: text, expression: bolusExpression)
+            ?? (unitRequired ? nil : parseNumber(in: text, expression: bareBolusExpression))
+        return amount.flatMap { $0 > 0 && $0 <= 50 ? $0 : nil }
+    }
+
+    private static func carbohydrateAmount(in text: String, unitRequired: Bool) -> Double? {
+        var amount = parseNumber(in: text, expression: carbohydrateExpression)
+        if amount == nil, !unitRequired,
+           trailingNineExpression.firstMatch(in: text, range: NSRange(text.startIndex..., in: text)) == nil {
+            amount = parseNumber(in: text, expression: bareCarbohydrateExpression)
+        }
+        return amount.flatMap { $0 > 0 && $0 <= 300 ? $0 : nil }
+    }
 
     static func minuteOfDay(from text: String) -> Int? {
         let range = NSRange(text.startIndex..<text.endIndex, in: text)
@@ -66,22 +91,19 @@ enum OCRTextParser {
         for candidate in sorted where candidate.confidence >= 0.35 {
             switch expectedKind {
             case .bolus:
-                if let amount = parseNumber(in: candidate.text, expression: bolusExpression),
-                   amount > 0, amount <= 50 {
+                if let amount = bolusAmount(in: candidate.text, unitRequired: false) {
                     recognized.append((amount, .bolus, candidate.confidence))
                 }
             case .carbohydrates:
-                if let amount = parseNumber(in: candidate.text, expression: carbohydrateExpression),
-                   amount > 0, amount <= 300 {
+                if let amount = carbohydrateAmount(in: candidate.text, unitRequired: false) {
                     recognized.append((amount, .carbohydrates, candidate.confidence))
                 }
             case .unknown:
-                if let amount = parseNumber(in: candidate.text, expression: bolusExpression),
-                   amount > 0, amount <= 50 {
+                // Without a known kind only the unit can classify the event.
+                if let amount = bolusAmount(in: candidate.text, unitRequired: true) {
                     recognized.append((amount, .bolus, candidate.confidence))
                 }
-                if let amount = parseNumber(in: candidate.text, expression: carbohydrateExpression),
-                   amount > 0, amount <= 300 {
+                if let amount = carbohydrateAmount(in: candidate.text, unitRequired: true) {
                     recognized.append((amount, .carbohydrates, candidate.confidence))
                 }
             }
@@ -93,20 +115,20 @@ enum OCRTextParser {
         return (.known(first.0), first.1, first.2)
     }
 
-    /// True when the candidates do not parse as the expected kind but do
-    /// parse, unambiguously, as the other one: the label row or stem colour
-    /// says one kind and the readable unit says the other.
+    /// True when no candidate parses as the expected kind but a confident
+    /// one carries the unit of the other kind: the label row or stem colour
+    /// says one kind and a readable unit says the other.
     static func unitContradicts(
         _ candidates: [OCRTextCandidate], expectedKind: OCRTherapyEventKind
     ) -> Bool {
-        let other: OCRTherapyEventKind
-        switch expectedKind {
-        case .bolus: other = .carbohydrates
-        case .carbohydrates: other = .bolus
-        case .unknown: return false
+        guard expectedKind != .unknown,
+              amount(from: candidates, expectedKind: expectedKind).0.value == nil else { return false }
+        return candidates.contains { candidate in
+            guard candidate.confidence >= 0.35 else { return false }
+            return expectedKind == .bolus
+                ? carbohydrateAmount(in: candidate.text, unitRequired: true) != nil
+                : bolusAmount(in: candidate.text, unitRequired: true) != nil
         }
-        return amount(from: candidates, expectedKind: expectedKind).0.value == nil
-            && amount(from: candidates, expectedKind: other).0.value != nil
     }
 
     /// Fallback for labels Vision reads at its lowest confidence level only.

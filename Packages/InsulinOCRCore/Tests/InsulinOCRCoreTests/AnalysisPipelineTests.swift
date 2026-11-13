@@ -618,11 +618,29 @@ final class AnalysisPipelineTests: XCTestCase {
         XCTAssertEqual(parsed.0, .known(160))
         XCTAssertEqual(parsed.1, .carbohydrates)
 
-        let unsafe = OCRTextParser.amount(
-            from: [OCRTextCandidate(text: "160", confidence: 0.99)],
-            expectedKind: .carbohydrates
-        )
-        XCTAssertEqual(unsafe.0, .amountUnknown)
+        // With the kind known from the label row the unit is redundant.
+        func bare(_ text: String, _ kind: OCRTherapyEventKind) -> OCRDetectedAmount {
+            OCRTextParser.amount(from: [OCRTextCandidate(text: text, confidence: 0.99)], expectedKind: kind).0
+        }
+        XCTAssertEqual(bare("160", .carbohydrates), .known(160))
+        XCTAssertEqual(bare("4.8", .bolus), .known(4.8))
+        XCTAssertEqual(bare("0,05", .bolus), .known(0.05))
+        // Without a known kind a bare number classifies nothing.
+        XCTAssertEqual(bare("160", .unknown), .amountUnknown)
+        // "4 g" is misread as "49": a unit-less whole number ending in 9 stays unknown.
+        XCTAssertEqual(bare("49", .carbohydrates), .amountUnknown)
+        XCTAssertEqual(bare("9", .carbohydrates), .amountUnknown)
+        XCTAssertEqual(bare("49 g", .carbohydrates), .known(49))
+        // Out-of-range or malformed text is still rejected.
+        for (text, kind) in [("160", OCRTherapyEventKind.bolus), ("301", .carbohydrates),
+                             ("23 9", .carbohydrates), ("4.8 1E", .bolus), ("0", .bolus)] {
+            XCTAssertEqual(bare(text, kind), .amountUnknown, text)
+        }
+        // A bare and a unit reading of the same pill must agree.
+        let disagreeing = OCRTextParser.amount(from: [
+            .init(text: "4", confidence: 0.9), .init(text: "46 g", confidence: 0.9),
+        ], expectedKind: .carbohydrates)
+        XCTAssertEqual(disagreeing.0, .amountUnknown)
     }
 
     func testTimeCalibrationUnwrapsMidnight() throws {

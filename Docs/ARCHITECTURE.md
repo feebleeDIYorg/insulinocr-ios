@@ -112,10 +112,15 @@ Native analysis 1.14.0 classifies an event by its label row. CamAPS FX draws
 neutral stems, so stem colour says nothing on real screenshots; bolus pills sit
 on the upper label row and carbohydrate pills on the lower one. A stem without
 therapy colour that ends in the upper row is a bolus, one ending in the lower
-row a carbohydrate entry (`testNeutralStemKindFollowsItsLabelRow`). The amount
-still needs the matching unit in the recognized text. A confidently read unit
+row a carbohydrate entry (`testNeutralStemKindFollowsItsLabelRow`). By the
+owner's decision the unit is redundant once the kind is known: a bare number is
+accepted as the amount ("4.8" in the upper row is 4.8 IE). Two guards remain. A
+unit-less whole number ending in 9 in the lower row stays unknown, because
+Vision reads a trailing "g" as "9" ("4 g" as "49"). A confidently read unit
 of the other kind is a contradiction: kind and amount stay unknown
-(`testUnitOfTheOtherKindContradictsTheLabelRow`). An unreadable amount now
+(`testUnitOfTheOtherKindContradictsTheLabelRow`). Without the unit a partially
+visible label is no longer rejected by its missing unit; only the crop-edge and
+agreement checks protect against a truncated number. An unreadable amount now
 withholds only its own category instead of both. The row rule is a layout
 assumption taken from the owner and the screenshots seen so far, not from
 CamAPS documentation; a coloured stem, as in the synthetic fixtures, keeps

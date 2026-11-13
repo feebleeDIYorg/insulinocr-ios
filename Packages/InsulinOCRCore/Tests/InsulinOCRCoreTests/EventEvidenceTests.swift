@@ -53,6 +53,7 @@ final class EventEvidenceTests: XCTestCase {
         // Agreement, no readable unit, weak text and unknown kind are no contradiction.
         XCTAssertFalse(OCRTextParser.unitContradicts(text("4.8 IE"), expectedKind: .bolus))
         XCTAssertFalse(OCRTextParser.unitContradicts(text("4.8"), expectedKind: .carbohydrates))
+        XCTAssertFalse(OCRTextParser.unitContradicts(text("160"), expectedKind: .bolus))
         XCTAssertFalse(OCRTextParser.unitContradicts(text("46 g", 0.3), expectedKind: .bolus))
         XCTAssertFalse(OCRTextParser.unitContradicts(text("46 g"), expectedKind: .unknown))
         XCTAssertFalse(OCRTextParser.unitContradicts([], expectedKind: .bolus))
