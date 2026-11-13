@@ -17,6 +17,8 @@ struct CorrectionEditorView: View {
     @State private var isSaving = false
     @State private var errorMessage: String?
     @State private var screenshot: UIImage?
+    @State private var review = ReviewSequence()
+    @FocusState private var amountFocused: Bool
 
     var body: some View {
         NavigationStack {
@@ -59,13 +61,27 @@ struct CorrectionEditorView: View {
                 // The crop and the inputs stay together directly under the
                 // overview, so the amount can be typed while the signal is visible.
                 if let selected = drafts.first(where: { $0.id == selectedObservationID }) {
-                    Text("Ausgewählter Datenpunkt").font(.headline)
+                    reviewHeader
                     if let screenshot, let original = selected.original {
                         ObservationCropView(screenshot: screenshot, kind: original.kind,
                                             boundingBox: original.boundingBox)
                     }
-                    ObservationDraftCard(draft: binding(for: selected), isSelected: true) {}
+                    ObservationDraftCard(
+                        draft: binding(for: selected), isSelected: true,
+                        amountFocus: $amountFocused,
+                        keyboardActionTitle: review.isEmpty ? nil : (canStepReview(1) ? "Weiter" : "Fertig"),
+                        keyboardAction: { stepReview(1) }
+                    ) {}
                         .accessibilityIdentifier("correction.selected")
+                    // Below the card, so a changing count never moves the input.
+                    if !review.isEmpty {
+                        Text(openReviewCount == 0
+                            ? "Alle Mengen sind eingetragen. Mit „Revision speichern“ übernehmen."
+                            : "Noch \(openReviewCount) von \(review.count) Mengen offen.")
+                            .font(.footnote)
+                            .foregroundStyle(.secondary)
+                            .accessibilityIdentifier("correction.reviewStatus")
+                    }
                 }
 
                 Label(
@@ -136,6 +152,51 @@ struct CorrectionEditorView: View {
         .onChange(of: filter) { visibleLimit = 20 }
     }
 
+    /// Title of the selected data point with the step controls of the review.
+    private var reviewHeader: some View {
+        HStack(spacing: 12) {
+            if let position = review.position(of: selectedObservationID) {
+                Text("Unbestätigt \(position + 1) von \(review.count)")
+                    .font(.headline)
+                    .monospacedDigit()
+            } else {
+                Text("Ausgewählter Datenpunkt").font(.headline)
+            }
+            Spacer(minLength: 0)
+            if !review.isEmpty {
+                Button("Vorheriges unbestätigtes Signal", systemImage: "chevron.left") { stepReview(-1) }
+                    .disabled(!canStepReview(-1))
+                    .accessibilityIdentifier("correction.reviewPrevious")
+                Button("Nächstes unbestätigtes Signal", systemImage: "chevron.right") { stepReview(1) }
+                    .disabled(!canStepReview(1))
+                    .accessibilityIdentifier("correction.reviewNext")
+            }
+        }
+        .labelStyle(.iconOnly)
+        .buttonStyle(.bordered)
+    }
+
+    private func isOpenForReview(_ id: UUID) -> Bool {
+        drafts.first(where: { $0.id == id }).map { $0.amountText.isEmpty && !$0.isDeleted } ?? false
+    }
+
+    private var openReviewCount: Int {
+        review.openCount(isOpen: isOpenForReview)
+    }
+
+    private func canStepReview(_ step: Int) -> Bool {
+        review.target(from: selectedObservationID, step: step, isOpen: isOpenForReview) != nil
+    }
+
+    /// Moves to the neighbouring signal; at the end the keyboard is dismissed.
+    private func stepReview(_ step: Int) {
+        if let target = review.target(from: selectedObservationID, step: step, isOpen: isOpenForReview) {
+            selectedObservationID = target
+        } else {
+            amountFocused = false
+        }
+    }
+
     @ViewBuilder
     private func basalGapReview(analysisRun: AnalysisRun) -> some View {
         if !analysisRun.quality.blockers.contains(.invalidTimeAxis),
@@ -181,6 +242,7 @@ struct CorrectionEditorView: View {
         draft.startDate = gap.start
         draft.endDate = gap.end
         drafts.append(draft)
+        review.append(draft.id)
         selectedObservationID = draft.id
         filter = .basal
     }
@@ -265,6 +327,8 @@ struct CorrectionEditorView: View {
                     : $0.startDate < $1.startDate
             }.map(ObservationDraft.init)
             filter = drafts.contains(where: { $0.amountText.isEmpty }) ? .unconfirmed : .basal
+            // Reviewed in time order, left to right in the screenshot.
+            review = ReviewSequence(ids: drafts.filter { $0.amountText.isEmpty }.map(\.id))
             selectedObservationID = filteredDrafts.first?.id
         } catch {
             errorMessage = error.localizedDescription
@@ -280,6 +344,7 @@ struct CorrectionEditorView: View {
     private func addDraft(kind: ObservationKind) {
         let draft = ObservationDraft(newKind: kind, date: record.captureTime)
         drafts.append(draft)
+        review.append(draft.id)
         selectedObservationID = draft.id
     }
 
@@ -411,6 +476,10 @@ private struct ObservationDraft: Identifiable, Equatable {
 private struct ObservationDraftCard: View {
     @Binding var draft: ObservationDraft
     let isSelected: Bool
+    var amountFocus: FocusState<Bool>.Binding
+    /// Title of the key above the number pad that steps the review; nil hides it.
+    let keyboardActionTitle: String?
+    let keyboardAction: () -> Void
     let select: () -> Void
 
     var body: some View {
@@ -446,6 +515,16 @@ private struct ObservationDraftCard: View {
             }
             TextField("Menge", text: $draft.amountText)
                 .keyboardType(.decimalPad)
+                .focused(amountFocus)
+                .toolbar {
+                    ToolbarItemGroup(placement: .keyboard) {
+                        if let keyboardActionTitle {
+                            Spacer()
+                            Button(keyboardActionTitle, action: keyboardAction)
+                                .accessibilityIdentifier("correction.reviewKeyboardNext")
+                        }
+                    }
+                }
             Toggle("Löschen", isOn: $draft.isDeleted)
                 .tint(.red)
         }
