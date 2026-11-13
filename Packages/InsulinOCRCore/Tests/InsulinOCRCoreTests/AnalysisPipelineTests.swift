@@ -217,6 +217,29 @@ final class AnalysisPipelineTests: XCTestCase {
         XCTAssertEqual(OCREventStemDetector.detect(image: image(outline: false), plotFrame: frame).count, 3)
     }
 
+    func testNeutralStemKindFollowsItsLabelRow() {
+        let width = 1_000, height = 500
+        var bytes = [UInt8](repeating: 255, count: width * height * 4)
+        func stem(_ xs: Range<Int>, top: Int) {
+            for y in top..<130 {
+                for x in xs {
+                    let i = (y * width + x) * 4
+                    bytes[i] = 0; bytes[i + 1] = 0; bytes[i + 2] = 0
+                }
+            }
+        }
+        // Black stems as CamAPS draws them: one ends in the lower label row,
+        // one continues to the upper row.
+        stem(300..<303, top: 85)
+        stem(600..<603, top: 55)
+        let frame = OCRNormalizedRect(x: 0.1, y: 0.2, width: 0.8, height: 0.65)
+        let stems = OCREventStemDetector.detect(
+            image: .init(width: width, height: height, rgba: bytes), plotFrame: frame)
+        XCTAssertEqual(stems.map(\.kind), [.carbohydrates, .bolus])
+        XCTAssertEqual(OCREventStemDetector.labelRowKind(stemTop: 0.161, frame: frame), .carbohydrates)
+        XCTAssertEqual(OCREventStemDetector.labelRowKind(stemTop: 0.159, frame: frame), .bolus)
+    }
+
     func testPillOutlineIsMeasuredOnlyWhenClosed() throws {
         let width = 1_000, height = 500
         func image(rightEnd: Bool, paperBeyond: Bool = true) -> OCRPixelImage {

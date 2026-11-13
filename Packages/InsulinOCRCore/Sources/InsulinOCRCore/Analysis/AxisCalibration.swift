@@ -93,6 +93,22 @@ enum OCRTextParser {
         return (.known(first.0), first.1, first.2)
     }
 
+    /// True when the candidates do not parse as the expected kind but do
+    /// parse, unambiguously, as the other one: the label row or stem colour
+    /// says one kind and the readable unit says the other.
+    static func unitContradicts(
+        _ candidates: [OCRTextCandidate], expectedKind: OCRTherapyEventKind
+    ) -> Bool {
+        let other: OCRTherapyEventKind
+        switch expectedKind {
+        case .bolus: other = .carbohydrates
+        case .carbohydrates: other = .bolus
+        case .unknown: return false
+        }
+        return amount(from: candidates, expectedKind: expectedKind).0.value == nil
+            && amount(from: candidates, expectedKind: other).0.value != nil
+    }
+
     /// Fallback for labels Vision reads at its lowest confidence level only.
     /// Each inner array is one recognition pass over the same pill. At least
     /// two passes must have read something, and every candidate of every pass

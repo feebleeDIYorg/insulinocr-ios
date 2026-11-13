@@ -23,7 +23,7 @@ version only, never by attaching health data.
 ## Snapshot
 
 - **Commit:** `6565f48` (main, PR #21)
-- **Analysis algorithm:** `native-1.13.0` (branch; `main` is `native-1.12.0`)
+- **Analysis algorithm:** `native-1.14.0` (branch; `main` is `native-1.13.0`)
 - **Computation model policy:** `openaps-exponential+loopkit-cob/1.3.0` (branch; `main` is `1.2.3`)
 - **Last reviewed:** 2026-11-12
 - **Overall:** experimental internal QA only. Full release acceptance is **not**

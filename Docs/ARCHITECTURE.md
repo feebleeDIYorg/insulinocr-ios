@@ -108,6 +108,19 @@ split crop is discarded and low-confidence corroboration is disabled: a split
 crop can cut a leading digit, and passes over the same cut pixels would agree
 on the wrong amount. Such events stay unknown until reviewed.
 
+Native analysis 1.14.0 classifies an event by its label row. CamAPS FX draws
+neutral stems, so stem colour says nothing on real screenshots; bolus pills sit
+on the upper label row and carbohydrate pills on the lower one. A stem without
+therapy colour that ends in the upper row is a bolus, one ending in the lower
+row a carbohydrate entry (`testNeutralStemKindFollowsItsLabelRow`). The amount
+still needs the matching unit in the recognized text. A confidently read unit
+of the other kind is a contradiction: kind and amount stay unknown
+(`testUnitOfTheOtherKindContradictsTheLabelRow`). An unreadable amount now
+withholds only its own category instead of both. The row rule is a layout
+assumption taken from the owner and the screenshots seen so far, not from
+CamAPS documentation; a coloured stem, as in the synthetic fixtures, keeps
+precedence over the row.
+
 Known landscape layouts from 1 to 48 hours are supported. Unknown layouts are
 rejected as `unsupportedLayout`. A fully visible event stem with an uncertain
 amount becomes `amountUnknown` and blocks the relevant IOB or COB component.

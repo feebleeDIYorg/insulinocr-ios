@@ -13,7 +13,7 @@ public struct NativeAnalysisConfiguration: Sendable, Equatable {
     public let maximumTimeResidualMinutes: Double
 
     public init(
-        algorithmVersion: String = "native-1.13.0",
+        algorithmVersion: String = "native-1.14.0",
         minimumBasalCoverage: Double = 0.99,
         maximumTimeResidualMinutes: Double = 1
     ) {
@@ -326,9 +326,13 @@ public actor NativeAnalysisEngine: AnalysisEngine {
                     corroborated = parsed.0.value != nil
                 }
             }
+            // The kind comes from the label row (or stem colour). A unit that
+            // reads as the other kind is a contradiction, not a correction.
+            let contradicted = parsed.0.value == nil
+                && OCRTextParser.unitContradicts(candidates, expectedKind: stem.kind)
             therapyEvents.append(
                 OCRTherapyEvent(
-                    kind: parsed.1,
+                    kind: contradicted ? .unknown : parsed.1,
                     date: timeline.date(atX: stem.stemRect.midX),
                     amount: parsed.0,
                     stemBoundingBox: stem.stemRect,
@@ -339,7 +343,9 @@ public actor NativeAnalysisEngine: AnalysisEngine {
                     provenance: OCRProvenance(
                         kind: .visionText,
                         sourceObservationIDs: evidenceIDs,
-                        note: parsed.0.value == nil
+                        note: contradicted
+                            ? "Label row and recognized unit disagree; kind and amount stay unknown."
+                            : parsed.0.value == nil
                             ? "Complete event stem found geometrically; no safe amount was recognized."
                             : corroborated
                                 ? "Amount accepted from agreeing low-confidence recognition passes."

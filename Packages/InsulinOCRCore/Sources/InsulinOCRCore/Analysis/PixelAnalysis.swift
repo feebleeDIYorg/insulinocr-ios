@@ -543,15 +543,18 @@ enum OCREventStemDetector {
                     orange += color.isCarbohydrateOrange ? 1 : 0
                 }
             }
-            let kind: OCRTherapyEventKind
+            let colourKind: OCRTherapyEventKind
             if blue > max(3, orange * 2) {
-                kind = .bolus
+                colourKind = .bolus
             } else if orange > max(3, blue * 2) {
-                kind = .carbohydrates
+                colourKind = .carbohydrates
             } else {
-                kind = .unknown
+                colourKind = .unknown
             }
             let normalizedStem = image.normalizedRect(for: stemPixelRect)
+            // CamAPS draws neutral stems; the label row carries the kind.
+            let kind = colourKind == .unknown
+                ? labelRowKind(stemTop: normalizedStem.minY, frame: plotFrame) : colourKind
             let pillWidth = max(0.035, min(0.075, Double(crop.width) / Double(image.width) * 0.07))
             let pillHeight = 0.045
             let pill = OCRNormalizedRect(
@@ -567,7 +570,7 @@ enum OCREventStemDetector {
                 stemRect: normalizedStem,
                 pillRect: pill,
                 isComplete: complete,
-                confidence: 0.55 + lengthConfidence * 0.35 + (kind == .unknown ? 0 : 0.1)
+                confidence: 0.55 + lengthConfidence * 0.35 + (colourKind == .unknown ? 0 : 0.1)
             )
         }
         return isolatePillRegions(dropStemsBehindNeighbouringPill(
@@ -604,6 +607,18 @@ enum OCREventStemDetector {
     }
 
     /// Pixel centre of the flat light-grey pill outline directly above a stem.
+    /// Lower edge of the upper label row, measured up from the plot frame.
+    /// Lower-row stems end about 0.016 above the frame, upper-row stems about 0.07.
+    static let upperLabelRowOffset = 0.04
+
+    /// CamAPS FX layout assumption: bolus pills sit on the upper label row,
+    /// carbohydrate pills on the lower one. A stem ending in the upper row is
+    /// therefore a bolus and one ending in the lower row a carbohydrate entry.
+    /// The recognized unit must still agree (`OCRTextParser.unitContradicts`).
+    static func labelRowKind(stemTop: Double, frame: OCRNormalizedRect) -> OCRTherapyEventKind {
+        stemTop < frame.minY - upperLabelRowOffset ? .bolus : .carbohydrates
+    }
+
     private static func isPillOutline(_ color: OCRPixelColor) -> Bool {
         let low = min(color.red, color.green, color.blue)
         let high = max(color.red, color.green, color.blue)
@@ -687,7 +702,7 @@ enum OCREventStemDetector {
         _ stems: [OCRDetectedEventStem], image: OCRPixelImage, frame: OCRNormalizedRect
     ) -> [OCRDetectedEventStem] {
         var result = stems
-        for lower in stems where lower.isComplete && lower.stemRect.minY > frame.minY - 0.04 {
+        for lower in stems where lower.isComplete && lower.stemRect.minY > frame.minY - upperLabelRowOffset {
             let x = Int(lower.stemRect.midX * Double(image.width))
             let lowerY = Int(lower.stemRect.minY * Double(image.height))
             let firstY = max(0, lowerY - Int(Double(image.height) * 0.075))
