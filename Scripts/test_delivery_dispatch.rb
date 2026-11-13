@@ -21,6 +21,8 @@ Dir.mktmpdir("insulinocr-dispatch-test-") do |root|
     "GITHUB_REPOSITORY" => "synthetic/app", "GITHUB_EVENT_PATH" => event_path,
     "GITHUB_WORKFLOW_REF" => "synthetic/app/.github/workflows/testflight.yml@refs/heads/main",
     "INSULINOCR_DELIVERY_MODE" => "upload", "INSULINOCR_BUILD_CONFIG" => "synthetic-private-canary"}
+  dev = base.merge("GITHUB_REF" => "refs/heads/dev", "INSULINOCR_DELIVERY_MODE" => "qa_upload",
+    "GITHUB_WORKFLOW_REF" => "synthetic/app/.github/workflows/testflight.yml@refs/heads/dev")
   # Each case: environment, expected public code, optional workflow input override.
   cases = [
     [base.merge("INSULINOCR_RELEASE_GATES_CONFIRMED" => "false"), "release_acceptance_required"],
@@ -31,6 +33,12 @@ Dir.mktmpdir("insulinocr-dispatch-test-") do |root|
     [base.merge("INSULINOCR_DELIVERY_MODE" => "qa_upload", "INSULINOCR_VERIFIED_CI_HEAD" => "b" * 40), "dispatch_invalid"],
     [base.merge("INSULINOCR_DELIVERY_MODE" => "qa_upload", "GITHUB_WORKFLOW_REF" => "synthetic/app/.github/workflows/ci.yml@refs/heads/main"), "dispatch_invalid"],
     [base.merge("INSULINOCR_DELIVERY_MODE" => "qa_upload"), "dispatch_invalid", {"release_gates_confirmed" => true}],
+    # dev passes dispatch for QA uploads only; release-gated uploads and setup stay on main.
+    [dev, "configuration_invalid"],
+    [dev.merge("INSULINOCR_DELIVERY_MODE" => "upload", "INSULINOCR_RELEASE_GATES_CONFIRMED" => "true"), "dispatch_invalid"],
+    [dev.merge("GITHUB_WORKFLOW_REF" => "synthetic/app/.github/workflows/testflight.yml@refs/heads/main"), "dispatch_invalid"],
+    [dev.merge("GITHUB_REF" => "refs/heads/other"), "dispatch_invalid"],
+    [dev.merge("INSULINOCR_DELIVERY_MODE" => "validate"), "dispatch_invalid"],
     [base.merge("INSULINOCR_DELIVERY_MODE" => "preflight"), "dispatch_invalid"],
     [base.merge("INSULINOCR_DELIVERY_MODE" => "qa_distribute"), "dispatch_invalid"]
   ]
@@ -41,6 +49,8 @@ Dir.mktmpdir("insulinocr-dispatch-test-") do |root|
     raise "Unexpected dispatch result" unless !status.success? && out.include?("code=#{code}.") && err.empty?
     raise "Private input leaked" if out.include?("synthetic-private-canary")
     raise "Missing actionable acceptance message" if code == "release_acceptance_required" && !out.include?("release_gates_confirmed must explicitly be true")
+    main_only = env["GITHUB_REF"] == "refs/heads/dev" && env["INSULINOCR_DELIVERY_MODE"] == "upload"
+    raise "Missing main-only release message" if main_only && !out.include?("accepted on main only")
     checks += 1
   end
 end

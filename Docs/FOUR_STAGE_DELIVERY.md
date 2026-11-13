@@ -12,9 +12,11 @@ It does not copy app-specific identifiers, clinical code or unrelated targets.
 | 1. Validate Secrets | Validate configured repository/token, Apple API access, one existing distribution identity and Match decryption, without requiring app profiles | Read only |
 | 2. Add Identifiers | Run validation; find exact app and share identifiers, create missing identifiers and add required capabilities | Read only; Apple identifier/capability additions are possible |
 | 3. Prepare App Profiles | Default `check` verifies existing app profiles. Explicit `prepare_profiles` runs validation and prepares only the app/share App Store profiles with the existing distribution certificate | Writes encrypted app profiles only in explicit setup mode |
-| 4. Build and TestFlight | Require successful CI on the exact main commit and deliver an internal build. Unchecked `release_gates_confirmed` (default) marks it as experimental QA; checking it requires full acceptance | Read only |
+| 4. Build and TestFlight | Require successful CI on the exact `main` or `dev` commit and deliver an internal build. Unchecked `release_gates_confirmed` (default) marks it as experimental QA; checking it requires full acceptance and `main` | Read only |
 
-All four actions are manual, main-only and protected by `testflight` approval.
+All four actions are manual and protected by `testflight` approval. The three
+setup actions are main-only. **4. Build and TestFlight** also runs from `dev`,
+where it delivers experimental QA builds only.
 They serialize access to the same signing store. Existing organization credentials
 are exposed only to the final operation step; complete logs stay temporary and
 private. No signing logs, profiles or signed packages become public artifacts.
@@ -40,10 +42,17 @@ the reference workflows, with a one-minute bound.
    With `release_gates_confirmed` unchecked (the default) it delivers an early
    experimental internal QA build: unfinished acceptance criteria stay open and
    that limitation is prepended to the TestFlight notes. Without entered notes,
-   the main commit subject and short SHA are used. Delivery requires successful
-   CI for the exact main commit, existing signing profiles, manual dispatch from
-   the main workflow and the protected Environment approval. Delivery stays
-   internal and Match stays read-only.
+   the delivered commit subject and short SHA are used. Delivery requires
+   successful CI for the exact delivered commit, existing signing profiles,
+   manual dispatch from the `main` or `dev` workflow and the protected
+   Environment approval. Delivery stays internal and Match stays read-only.
+
+   Select `dev` in the branch menu to deliver an integration build before it
+   is merged. `dev` must contain this workflow, needs its own successful push
+   CI and accepts only the unchecked QA variant; `release_gates_confirmed` is
+   rejected there. Both branches share one App Store Connect build-number
+   sequence. If the `testflight` Environment restricts deployment branches,
+   `dev` has to be allowed in the repository settings.
 
    If Apple accepted the binary but processing, notes or the internal group
    assignment fail afterwards, the same run waits until the build is valid and
@@ -73,7 +82,8 @@ or a hardcoded `match AppStore ...` string. Missing or malformed mappings stop t
 archive instead of selecting another profile.
 
 Unit, integration and UI tests continue in `ci.yml`. Delivery verifies the latest
-CI run for the exact main SHA, same repository, push event and main branch; queued,
+CI run for the exact SHA, same repository, push event and the dispatched branch
+(`main` or `dev`); a run on the other branch does not count. Queued,
 failed, skipped, fork and different-SHA results cannot satisfy this gate. It does
 not repeat a separate Fastlane Scan UI run or weaken the existing CI tests. A new
 failed/running CI attempt cannot be hidden by an older green attempt.

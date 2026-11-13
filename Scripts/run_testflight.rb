@@ -12,8 +12,9 @@ root = File.expand_path("..", __dir__)
 exit_code = 1
 stage = "dispatch"
 begin
-  raise ArgumentError unless ENV["GITHUB_REF"] == "refs/heads/main" && ENV["GITHUB_EVENT_NAME"] == "workflow_dispatch"
+  raise ArgumentError unless ENV["GITHUB_EVENT_NAME"] == "workflow_dispatch"
   mode = ENV.fetch("INSULINOCR_DELIVERY_MODE")
+  raise ArgumentError unless InsulinOCRSetupPolicy.dispatch_ref_allowed?(mode, ENV["GITHUB_REF"])
   lane = InsulinOCRSetupPolicy.lane(mode)
   if mode == "profiles_apply"
     event = JSON.parse(File.read(ENV.fetch("GITHUB_EVENT_PATH")))
@@ -79,6 +80,9 @@ begin
   end
 rescue StandardError => error
   puts "::error::InsulinOCR delivery failed: stage=#{stage} code=#{InsulinOCRDeliveryStatus.failure_code(stage, error)}. Private diagnostics were not published."
+  if stage == "dispatch" && mode == "upload" && ENV["GITHUB_REF"] != "refs/heads/#{InsulinOCRSetupPolicy::RELEASE_BRANCH}"
+    puts "::error::Upload was not started: release_gates_confirmed is accepted on main only. Leave it unchecked to deliver an experimental internal QA build from dev."
+  end
   if stage == "release_acceptance"
     puts "::error::Upload was not started: release_gates_confirmed must explicitly be true after the documented release criteria pass. Leave it unchecked for an experimental internal QA build."
   end

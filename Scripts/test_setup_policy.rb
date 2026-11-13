@@ -58,6 +58,26 @@ assert.call(!InsulinOCRSetupPolicy.delivery_authorized?(upload, {"inputs" => {"r
 [nil, [], {"inputs" => []}].each do |invalid_event|
  assert.call(!InsulinOCRSetupPolicy.delivery_authorized?(upload, invalid_event)); checks += 1
 end
+# dev delivers experimental QA builds from its own workflow ref only.
+dev = upload.merge("GITHUB_REF" => "refs/heads/dev",
+ "GITHUB_WORKFLOW_REF" => "synthetic/app/.github/workflows/testflight.yml@refs/heads/dev")
+assert.call(InsulinOCRSetupPolicy.delivery_authorized?(dev, qa_event)); checks += 1
+[{"GITHUB_WORKFLOW_REF" => "synthetic/app/.github/workflows/testflight.yml@refs/heads/main"},
+ {"GITHUB_REF" => "refs/heads/main"}, {"GITHUB_REF" => "refs/heads/develop"},
+ {"GITHUB_REF" => "refs/tags/dev"}, {"GITHUB_REF" => "refs/heads/dev/feature"},
+ {"GITHUB_REF" => "dev"}, {"GITHUB_EVENT_NAME" => "push"}].each do |changes|
+ assert.call(!InsulinOCRSetupPolicy.delivery_authorized?(dev.merge(changes), qa_event)); checks += 1
+end
+dev_release = dev.merge("INSULINOCR_DELIVERY_MODE" => "upload", "INSULINOCR_RELEASE_GATES_CONFIRMED" => "true")
+assert.call(!InsulinOCRSetupPolicy.delivery_authorized?(dev_release, {"inputs" => {"release_gates_confirmed" => true}})); checks += 1
+assert.call(InsulinOCRSetupPolicy.dispatch_ref_allowed?("qa_upload", "refs/heads/dev")); checks += 1
+assert.call(InsulinOCRSetupPolicy.dispatch_ref_allowed?("profiles_apply", "refs/heads/main")); checks += 1
+%w[validate identifiers profiles_check profiles_apply].each do |setup|
+ assert.call(!InsulinOCRSetupPolicy.dispatch_ref_allowed?(setup, "refs/heads/dev")); checks += 1
+end
+assert.call(!InsulinOCRSetupPolicy.dispatch_ref_allowed?("qa_upload", "refs/heads/other")); checks += 1
+assert.call(!InsulinOCRSetupPolicy.profile_creation_authorized?(env.merge("GITHUB_REF" => "refs/heads/dev",
+ "GITHUB_WORKFLOW_REF" => "synthetic/app/.github/workflows/create_profiles.yml@refs/heads/dev"), event)); checks += 1
 accepted = upload.merge("INSULINOCR_DELIVERY_MODE" => "upload", "INSULINOCR_RELEASE_GATES_CONFIRMED" => "true")
 accepted_event = {"inputs" => {"release_gates_confirmed" => true}}
 assert.call(InsulinOCRSetupPolicy.delivery_authorized?(accepted, accepted_event)); checks += 1

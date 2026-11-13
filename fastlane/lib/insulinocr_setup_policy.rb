@@ -8,6 +8,20 @@ module InsulinOCRSetupPolicy
   QA_NOTICE = "Experimenteller interner QA-Build. OCR-, Geräte- und Leistungsabnahme sind noch offen. Nur für Tests und Feedback, nicht für Therapieentscheidungen.".freeze
   FALLBACK_NOTES = "Interner InsulinOCR-Testbuild".freeze
 
+  # Internal delivery may start from main or the dev integration branch. Setup
+  # operations and uploads after full release acceptance stay main-only.
+  DELIVERY_BRANCHES = %w[main dev].freeze
+  RELEASE_BRANCH = "main".freeze
+
+  def self.delivery_branch(ref)
+    match = ref.to_s.match(%r{\Arefs/heads/([A-Za-z0-9_.-]+)\z})
+    match[1] if match && DELIVERY_BRANCHES.include?(match[1])
+  end
+
+  def self.dispatch_ref_allowed?(mode, ref)
+    ref == "refs/heads/#{RELEASE_BRANCH}" || (delivery_mode?(mode) && !delivery_branch(ref).nil?)
+  end
+
   def self.lane(mode)
     LANES.fetch(mode) { raise ArgumentError, "Unsupported delivery operation" }
   end
@@ -31,13 +45,14 @@ module InsulinOCRSetupPolicy
     mode = env["INSULINOCR_DELIVERY_MODE"]
     sha = env["GITHUB_SHA"]
     repository = env["GITHUB_REPOSITORY"]
+    branch = delivery_branch(env["GITHUB_REF"])
     delivery_mode?(mode) && sha.to_s.match?(/\A[a-f0-9]{40}\z/) &&
       env["INSULINOCR_VERIFIED_CI_HEAD"] == sha &&
       repository.to_s.match?(%r{\A[A-Za-z0-9_.-]+/[A-Za-z0-9_.-]+\z}) &&
-      env["GITHUB_REF"] == "refs/heads/main" && env["GITHUB_EVENT_NAME"] == "workflow_dispatch" &&
-      env["GITHUB_WORKFLOW_REF"] == "#{repository}/.github/workflows/testflight.yml@refs/heads/main" &&
+      !branch.nil? && env["GITHUB_EVENT_NAME"] == "workflow_dispatch" &&
+      env["GITHUB_WORKFLOW_REF"] == "#{repository}/.github/workflows/testflight.yml@refs/heads/#{branch}" &&
       requested_mode(event) == mode &&
-      (mode != "upload" || env["INSULINOCR_RELEASE_GATES_CONFIRMED"] == "true")
+      (mode != "upload" || (branch == RELEASE_BRANCH && env["INSULINOCR_RELEASE_GATES_CONFIRMED"] == "true"))
   end
 
   # Optional workflow notes fall back to the squash-merged commit subject.

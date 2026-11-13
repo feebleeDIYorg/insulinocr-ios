@@ -29,7 +29,7 @@ def prepare_signing
 end
 def require_internal_delivery_authorization
   event = JSON.parse(File.read(ENV.fetch("GITHUB_EVENT_PATH")))
-  UI.user_error!("Verified main CI and an explicitly selected internal delivery are required") unless
+  UI.user_error!("Verified branch CI and an explicitly selected internal delivery are required") unless
     InsulinOCRSetupPolicy.delivery_authorized?(ENV, event)
 end
 
