@@ -126,7 +126,18 @@ merged, split, overlapped or cut. A reading that carries its unit is accepted
 as before. A confidently read unit of the other kind remains a contradiction:
 kind and amount stay unknown (`testUnitOfTheOtherKindContradictsTheLabelRow`).
 The glyph widths were set on the private screenshots seen so far and are not
-validated on a corpus. An unreadable amount now
+validated on a corpus.
+
+Native analysis 1.16.0 reads the pill drawn in front of an overlapping
+neighbour. A pill is centred on its stem; where two pills overlap, their flat
+rows merge, so a span whose centre is off the stem is no longer a measurement.
+The front pill is then found as the one span symmetric about its stem with an
+outline arc at three heights on both sides
+(`testFrontPillOfAnOverlappingPairIsMeasuredAndTheHiddenOneIsNot`). Its label
+is read from the part between the arcs, which only its own text can occupy.
+The pill behind has a hidden arc, is not measurable and keeps the earlier
+split-crop rules. A measured stand-alone pill next to a neighbour is read from
+its own outline as well instead of a crop split between the stems. An unreadable amount now
 withholds only its own category instead of both. The row rule is a layout
 assumption taken from the owner and the screenshots seen so far, not from
 CamAPS documentation; a coloured stem, as in the synthetic fixtures, keeps

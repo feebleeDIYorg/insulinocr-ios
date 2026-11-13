@@ -274,6 +274,50 @@ final class AnalysisPipelineTests: XCTestCase {
             above: stem, image: image(rightEnd: true, paperBeyond: false)))
     }
 
+    func testFrontPillOfAnOverlappingPairIsMeasuredAndTheHiddenOneIsNot() throws {
+        let width = 1_000, height = 500
+        var bytes = [UInt8](repeating: 255, count: width * height * 4)
+        func set(_ x: Int, _ y: Int, _ value: UInt8) {
+            for channel in 0..<3 { bytes[(y * width + x) * 4 + channel] = value }
+        }
+        // A stadium with a two-pixel outline; painting it covers what is behind.
+        func pill(left: Int, right: Int) {
+            let top = 60.0, bottom = 85.0, radius = (bottom - top) / 2, centreY = (top + bottom) / 2
+            for y in 58..<87 {
+                for x in (left - 2)...(right + 2) {
+                    let px = Double(x) + 0.5, py = Double(y) + 0.5
+                    let nearestX = min(max(px, Double(left) + radius), Double(right + 1) - radius)
+                    let distance = ((px - nearestX) * (px - nearestX)
+                        + (py - centreY) * (py - centreY)).squareRoot() - radius
+                    if distance <= 0 { set(x, y, distance >= -2 ? 199 : 255) }
+                }
+            }
+        }
+        func stem(_ xs: Range<Int>) {
+            for y in 85..<130 { for x in xs { set(x, y, 0) } }
+        }
+        // Painted in time order: the later pill covers the right end of the earlier one.
+        pill(left: 360, right: 440); stem(399..<402)
+        pill(left: 415, right: 485); stem(449..<452)
+        pill(left: 600, right: 680); stem(639..<642)
+        let image = OCRPixelImage(width: width, height: height, rgba: bytes)
+        let frame = OCRNormalizedRect(x: 0.1, y: 0.2, width: 0.8, height: 0.65)
+        let stems = OCREventStemDetector.detect(image: image, plotFrame: frame)
+        XCTAssertEqual(stems.count, 3)
+        XCTAssertNil(OCREventStemDetector.closedPillPixelRect(above: stems[0], image: image))
+        let front = try XCTUnwrap(OCREventStemDetector.closedPillPixelRect(above: stems[1], image: image))
+        XCTAssertLessThanOrEqual(abs(front.x - 415), 1)
+        XCTAssertLessThanOrEqual(abs(front.maxX - 486), 1)
+        let alone = try XCTUnwrap(OCREventStemDetector.closedPillPixelRect(above: stems[2], image: image))
+        XCTAssertLessThanOrEqual(abs(alone.x - 600), 1)
+        XCTAssertLessThanOrEqual(abs(alone.maxX - 681), 1)
+        // The readable region keeps clear of the arcs, where a neighbour's glyphs can intrude.
+        let label = OCREventStemDetector.labelRegion(of: front)
+        XCTAssertGreaterThan(label.x, front.x + 3)
+        XCTAssertLessThan(label.maxX, front.maxX - 3)
+        XCTAssertTrue(OCREventStemDetector.hasCompetingNeighbour(stems[1], among: stems))
+    }
+
     func testLabelGlyphShapeIsMeasuredFromInk() throws {
         let width = 1_000, height = 500
         // Glyphs as (ink width, gap after) in pixels; the pill is 24 pixels high.
