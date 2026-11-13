@@ -12,37 +12,32 @@ struct ObservationCropView: View {
     var body: some View {
         if let region = ObservationCropRegion.region(for: kind, boundingBox: boundingBox),
            let crop = Self.crop(screenshot, to: region) {
-            VStack(alignment: .leading, spacing: 6) {
-                Image(uiImage: crop)
-                    .resizable()
-                    .interpolation(.high)
-                    .scaledToFit()
-                    .overlay {
-                        if let mark = ObservationCropRegion.highlight(of: boundingBox, in: region) {
-                            GeometryReader { proxy in
-                                Rectangle()
-                                    .stroke(Color.accentColor, lineWidth: 2)
-                                    .frame(
-                                        width: max(6, mark.width * proxy.size.width),
-                                        height: max(6, mark.height * proxy.size.height)
-                                    )
-                                    .position(
-                                        x: (mark.x + mark.width / 2) * proxy.size.width,
-                                        y: (mark.y + mark.height / 2) * proxy.size.height
-                                    )
-                            }
-                            .accessibilityHidden(true)
+            Image(uiImage: crop)
+                .resizable()
+                .interpolation(.high)
+                .scaledToFit()
+                .overlay {
+                    if let mark = ObservationCropRegion.highlight(of: boundingBox, in: region) {
+                        GeometryReader { proxy in
+                            Rectangle()
+                                .stroke(Color.accentColor, lineWidth: 2)
+                                .frame(
+                                    width: max(6, mark.width * proxy.size.width),
+                                    height: max(6, mark.height * proxy.size.height)
+                                )
+                                .position(
+                                    x: (mark.x + mark.width / 2) * proxy.size.width,
+                                    y: (mark.y + mark.height / 2) * proxy.size.height
+                                )
                         }
+                        .accessibilityHidden(true)
                     }
-                    .frame(maxWidth: .infinity, maxHeight: 220)
-                    .background(Color(.secondarySystemBackground))
-                    .clipShape(.rect(cornerRadius: 10))
-                    .accessibilityLabel("Bildausschnitt des ausgewählten Signals aus dem Original-Screenshot")
-                    .accessibilityIdentifier("correction.crop")
-                Text("Ausschnitt aus dem Original-Screenshot. Der Rahmen markiert das erkannte Signal.")
-                    .font(.caption)
-                    .foregroundStyle(.secondary)
-            }
+                }
+                .frame(maxWidth: .infinity, maxHeight: 160)
+                .background(Color(.secondarySystemBackground))
+                .clipShape(.rect(cornerRadius: 10))
+                .accessibilityLabel("Bildausschnitt des ausgewählten Signals aus dem Original-Screenshot")
+                .accessibilityIdentifier("correction.crop")
         }
     }
 

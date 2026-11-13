@@ -56,6 +56,18 @@ struct CorrectionEditorView: View {
                 )
                 .frame(maxWidth: .infinity)
 
+                // The crop and the inputs stay together directly under the
+                // overview, so the amount can be typed while the signal is visible.
+                if let selected = drafts.first(where: { $0.id == selectedObservationID }) {
+                    Text("Ausgewählter Datenpunkt").font(.headline)
+                    if let screenshot, let original = selected.original {
+                        ObservationCropView(screenshot: screenshot, kind: original.kind,
+                                            boundingBox: original.boundingBox)
+                    }
+                    ObservationDraftCard(draft: binding(for: selected), isSelected: true) {}
+                        .accessibilityIdentifier("correction.selected")
+                }
+
                 Label(
                     "Rohbeobachtungen bleiben unverändert. Speichern erzeugt eine neue Korrekturrevision und einen neuen Rechenlauf.",
                     systemImage: "clock.arrow.trianglehead.counterclockwise.rotate.90"
@@ -78,15 +90,6 @@ struct CorrectionEditorView: View {
 
                 basalGapReview(analysisRun: analysisRun)
 
-                if let selected = drafts.first(where: { $0.id == selectedObservationID }) {
-                    Text("Ausgewählter Datenpunkt").font(.headline)
-                    if let screenshot, let original = selected.original {
-                        ObservationCropView(screenshot: screenshot, kind: original.kind,
-                                            boundingBox: original.boundingBox)
-                    }
-                    ObservationDraftCard(draft: binding(for: selected), isSelected: true) {}
-                        .accessibilityIdentifier("correction.selected")
-                }
                 if filteredDrafts.isEmpty {
                     Text("Keine Datenpunkte in diesem Filter. Andere Typen lassen sich über das Filtermenü auswählen.")
                         .foregroundStyle(.secondary)
