@@ -64,6 +64,19 @@ enum OCRTextParser {
         return amount.flatMap { $0 > 0 && $0 <= 300 ? $0 : nil }
     }
 
+    static func minuteOfDay(from text: String) -> Int? {
+        let range = NSRange(text.startIndex..<text.endIndex, in: text)
+        guard let match = timeExpression.firstMatch(in: text, range: range),
+              match.range == range,
+              let hourRange = Range(match.range(at: 1), in: text),
+              let minuteRange = Range(match.range(at: 2), in: text),
+              let hour = Int(text[hourRange]),
+              let minute = Int(text[minuteRange]) else {
+            return nil
+        }
+        return hour * 60 + minute
+    }
+
     static func numericAxisValue(from text: String) -> Double? {
         parseNumber(in: text, expression: numberExpression)
     }
