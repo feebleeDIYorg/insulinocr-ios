@@ -13,7 +13,7 @@ public struct NativeAnalysisConfiguration: Sendable, Equatable {
     public let maximumTimeResidualMinutes: Double
 
     public init(
-        algorithmVersion: String = "native-1.15.0",
+        algorithmVersion: String = "native-1.16.0",
         minimumBasalCoverage: Double = 0.99,
         maximumTimeResidualMinutes: Double = 1
     ) {
@@ -265,20 +265,29 @@ public actor NativeAnalysisEngine: AnalysisEngine {
             // paints over it. One estimated to cross the boundary is read only
             // when its outline is measured closed; otherwise it stays unknown.
             let crossesBoundary = stem.pillRect.maxX > layout.dataRightEdgeX
-            let closedPill = crossesBoundary
-                ? OCREventStemDetector.closedPillRect(above: stem, image: pixelImage) : nil
+            // Overlapping pills share pixels: a crop split between two stems
+            // can cut a leading digit ("80 g" read as "30 g").
+            let hasNeighbour = OCREventStemDetector.hasCompetingNeighbour(stem, among: stems)
+            let measuredPill = crossesBoundary || hasNeighbour
+                ? OCREventStemDetector.closedPillPixelRect(above: stem, image: pixelImage) : nil
+            let closedPill = measuredPill.map(pixelImage.normalizedRect(for:))
             // Ink structure of the label, used to confirm a unit-less reading.
             let labelShape = OCREventStemDetector.labelGlyphShape(above: stem, image: pixelImage)
             let clippedPill = crossesBoundary && closedPill == nil
             let textRightEdge = closedPill?.maxX ?? layout.dataRightEdgeX
-            let pillRegion = closedPill ?? OCRNormalizedRect(x: stem.pillRect.minX, y: stem.pillRect.minY,
+            // A measured pill next to a neighbour is read from the part that
+            // holds only its own label. This covers the pill drawn in front
+            // of an overlap; the one behind it is not measurable.
+            let measuredRegion = measuredPill.map {
+                pixelImage.normalizedRect(for: hasNeighbour ? OCREventStemDetector.labelRegion(of: $0) : $0)
+            }
+            let pillRegion = measuredRegion ?? OCRNormalizedRect(x: stem.pillRect.minX, y: stem.pillRect.minY,
                 width: max(0, min(stem.pillRect.maxX, layout.dataRightEdgeX) - stem.pillRect.minX),
                 height: stem.pillRect.height)
-            // Overlapping pills share pixels: a crop split between two stems
-            // can cut a leading digit ("80 g" read as "30 g"). Text touching
-            // such a crop's edge is not evidence, and agreeing low-confidence
-            // passes over the same cut pixels are not corroboration.
-            let crowded = OCREventStemDetector.hasCompetingNeighbour(stem, among: stems)
+            // Without a measurement the split crop stays: text touching its
+            // edge is not evidence, and agreeing low-confidence passes over
+            // the same cut pixels are not corroboration.
+            let crowded = hasNeighbour && measuredPill == nil
             // A clipped multi-digit label can look like a confident smaller
             // amount. Keep its complete stem unknown rather than parsing it.
             let pillObservations: [OCRRawTextObservation] = clippedPill ? [] : try recognizeText(
@@ -311,7 +320,7 @@ public actor NativeAnalysisEngine: AnalysisEngine {
                 latestObservations = rawObservations
                 let usable = enhanced.filter {
                     $0.boundingBox.maxX <= textRightEdge &&
-                    Self.isUnclippedPillText($0.boundingBox, in: closedPill ?? stem.pillRect,
+                    Self.isUnclippedPillText($0.boundingBox, in: measuredRegion ?? stem.pillRect,
                         imageWidth: cgImage.width, imageHeight: cgImage.height)
                 }
                 candidates += usable.flatMap(\.candidates)

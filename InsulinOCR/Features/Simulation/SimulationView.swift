@@ -10,8 +10,10 @@ struct SimulationView: View {
     @State private var baseEnvelope: StoredComputationEnvelope?
     @State private var scenarioName = "Neue Simulation"
     @State private var eventTime: Date
-    @State private var bolusUnits = 0.0
-    @State private var carbohydrateGrams = 0.0
+    // Empty until something is typed: the field shows its unit as placeholder
+    // instead of a zero that has to be deleted first.
+    @State private var bolusUnits: Double?
+    @State private var carbohydrateGrams: Double?
     @State private var preview: SimulationScenario?
     @State private var savedScenarios: [SimulationScenario] = []
     @State private var errorMessage: String?
@@ -207,10 +209,10 @@ struct SimulationView: View {
             return
         }
         var events: [SimulationEvent] = []
-        if bolusUnits > 0, bolusUnits.isFinite {
+        if let bolusUnits, bolusUnits > 0, bolusUnits.isFinite {
             events.append(.bolus(InsulinEvent(date: eventTime, units: bolusUnits)))
         }
-        if carbohydrateGrams > 0, carbohydrateGrams.isFinite {
+        if let carbohydrateGrams, carbohydrateGrams > 0, carbohydrateGrams.isFinite {
             events.append(.carbohydrate(CarbohydrateEvent(date: eventTime, grams: carbohydrateGrams)))
         }
         guard !events.isEmpty else {

@@ -684,6 +684,14 @@ enum OCREventStemDetector {
         }
         guard let top else { return nil }
         let radius = (base.y - top + 1) / 2, middle = (base.y + top) / 2
+        let stemRect = image.pixelRect(for: stem.stemRect)
+        // Twice the stem centre, to stay in whole pixels.
+        let doubledCentre = 2 * stemRect.x + stemRect.width
+        func isPaper(_ x: Int, _ y: Int) -> Bool {
+            guard (0..<image.width).contains(x) else { return false }
+            let color = image[x, y]
+            return min(color.red, color.green, color.blue) >= 245
+        }
         func arcEnd(from start: Int, step: Int) -> Int? {
             var last: Int?
             for offset in 1..<(radius + 5) {
@@ -692,17 +700,67 @@ enum OCREventStemDetector {
                 if isPillOutline(image[x, middle]) { last = x }
             }
             guard let last else { return nil }
-            for offset in 2..<6 {
-                let x = last + step * offset
-                guard (0..<image.width).contains(x) else { return nil }
-                let color = image[x, middle]
-                guard min(color.red, color.green, color.blue) >= 245 else { return nil }
-            }
+            for offset in 2..<6 where !isPaper(last + step * offset, middle) { return nil }
             return last
         }
-        guard let left = arcEnd(from: base.lower, step: -1),
-              let right = arcEnd(from: base.upper, step: 1) else { return nil }
-        return OCRPixelRect(x: left, y: top, width: right - left + 1, height: base.y - top + 1)
+        // A pill is centred on its stem. Where two pills overlap, their flat
+        // rows merge and the arcs found from the run ends belong to different
+        // pills; such a span is not centred and is no measurement.
+        if let left = arcEnd(from: base.lower, step: -1),
+           let right = arcEnd(from: base.upper, step: 1),
+           abs(left + right + 1 - doubledCentre) <= 3 {
+            return OCRPixelRect(x: left, y: top, width: right - left + 1, height: base.y - top + 1)
+        }
+        return frontPillPixelRect(doubledCentre: doubledCentre, top: top, baseY: base.y, image: image)
+    }
+
+    /// The pill drawn in front of an overlapping neighbour keeps both end
+    /// arcs. It is found as the one span that is symmetric about the stem
+    /// and has an outline arc at three heights on each side, with paper
+    /// outside the right arc and inside both. A pill behind its neighbour
+    /// has a hidden arc and therefore no such span.
+    private static func frontPillPixelRect(
+        doubledCentre: Int, top: Int, baseY: Int, image: OCRPixelImage
+    ) -> OCRPixelRect? {
+        let pillHeight = baseY - top + 1
+        let radius = Double(pillHeight) / 2, middle = (baseY + top) / 2
+        func isPaper(_ x: Int, _ y: Int) -> Bool {
+            guard (0..<image.width).contains(x) else { return false }
+            let color = image[x, y]
+            return min(color.red, color.green, color.blue) >= 245
+        }
+        func outlineNear(_ x: Int, _ y: Int) -> Bool {
+            (-1...1).contains { (0..<image.width).contains(x + $0) && isPillOutline(image[x + $0, y]) }
+        }
+        let centre = doubledCentre / 2
+        let first = centre + Int(radius), last = min(image.width - 6, centre + Int(2.2 * Double(pillHeight)))
+        guard first <= last else { return nil }
+        var ends: [Int] = []
+        for right in first...last where isPillOutline(image[right, middle]) {
+            let left = doubledCentre - 1 - right
+            guard left >= 6,
+                  (2..<6).allSatisfy({ isPaper(right + $0, middle) }),
+                  (3..<6).allSatisfy({ isPaper(right - $0, middle) && isPaper(left + $0, middle) }),
+                  outlineNear(left, middle) else { continue }
+            let arcsMatch = [-0.5, 0.5].allSatisfy { fraction -> Bool in
+                let y = Int((Double(middle) + fraction * radius).rounded())
+                let inset = radius - (radius * radius - (fraction * radius) * (fraction * radius)).squareRoot()
+                return outlineNear(Int((Double(right) - inset).rounded()), y)
+                    && outlineNear(Int((Double(left) + inset).rounded()), y)
+            }
+            if arcsMatch { ends.append(right) }
+        }
+        guard let right = ends.max(), let innermost = ends.min(), right - innermost <= 2 else { return nil }
+        let left = doubledCentre - 1 - right
+        return OCRPixelRect(x: left, y: top, width: right - left + 1, height: pillHeight)
+    }
+
+    /// Part of a measured pill that can only hold its own label: the label
+    /// starts well inside the end arcs, and a neighbour's glyphs can reach
+    /// into the rectangle only next to them.
+    static func labelRegion(of pill: OCRPixelRect) -> OCRPixelRect {
+        let inset = min(pill.width / 3, max(3, pill.height / 5))
+        return OCRPixelRect(x: pill.x + inset, y: pill.y, width: pill.width - 2 * inset, height: pill.height)
     }
 
     /// Glyph structure of the label inside a closed pill, from ink alone.
@@ -716,10 +774,11 @@ enum OCREventStemDetector {
     static func labelGlyphShape(above stem: OCRDetectedEventStem, image: OCRPixelImage) -> OCRLabelGlyphShape? {
         guard let pill = closedPillPixelRect(above: stem, image: image), pill.height >= 12 else { return nil }
         let inset = max(3, pill.height / 12)
-        guard pill.width > 2 * inset + 2 else { return nil }
+        let label = labelRegion(of: pill)
+        guard label.width > 2 else { return nil }
         let unit = Double(pill.height)
         var groups: [(first: Int, last: Int)] = []
-        for x in (pill.x + inset)...(pill.maxX - 1 - inset) {
+        for x in label.x...(label.maxX - 1) {
             var hasInk = false
             for y in (pill.y + inset)...(pill.maxY - 1 - inset) {
                 let color = image[x, y]

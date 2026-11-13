@@ -42,12 +42,13 @@ private struct GlucoseTherapyChart: View, AXChartDescriptorRepresentable {
                     y: .value("Glukose", displayed(point.mmolL))
                 )
                 .interpolationMethod(.linear)
-                .foregroundStyle(.black)
+                // Semantic label colour: black in light mode, white in dark mode.
+                .foregroundStyle(.primary)
                 PointMark(
                     x: .value("Zeit", point.timestamp),
                     y: .value("Glukose", displayed(point.mmolL))
                 )
-                .foregroundStyle(.black)
+                .foregroundStyle(.primary)
                 .symbolSize(18)
             }
             .chartYAxisLabel(unitLabel)
