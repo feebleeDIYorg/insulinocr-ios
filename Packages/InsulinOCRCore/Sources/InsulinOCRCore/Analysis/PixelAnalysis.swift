@@ -179,6 +179,22 @@ enum OCRConnectedComponents {
     }
 }
 
+/// What the ink of a pill label consists of, independent of text recognition.
+struct OCRLabelGlyphShape: Sendable, Equatable {
+    let digits: Int
+    let separators: Int
+    let unit: OCRTherapyEventKind
+
+    /// A unit-less reading is complete when it accounts for every number
+    /// glyph in the pill and the unit glyphs belong to the expected kind.
+    func confirms(bareNumber text: String, kind: OCRTherapyEventKind) -> Bool {
+        let characters = text.filter { !$0.isWhitespace }
+        return kind == unit
+            && characters.filter(\.isNumber).count == digits
+            && characters.filter { $0 == "." || $0 == "," }.count == separators
+    }
+}
+
 struct OCRDetectedEventStem: Sendable, Equatable {
     let kind: OCRTherapyEventKind
     let stemRect: OCRNormalizedRect
@@ -543,15 +559,18 @@ enum OCREventStemDetector {
                     orange += color.isCarbohydrateOrange ? 1 : 0
                 }
             }
-            let kind: OCRTherapyEventKind
+            let colourKind: OCRTherapyEventKind
             if blue > max(3, orange * 2) {
-                kind = .bolus
+                colourKind = .bolus
             } else if orange > max(3, blue * 2) {
-                kind = .carbohydrates
+                colourKind = .carbohydrates
             } else {
-                kind = .unknown
+                colourKind = .unknown
             }
             let normalizedStem = image.normalizedRect(for: stemPixelRect)
+            // CamAPS draws neutral stems; the label row carries the kind.
+            let kind = colourKind == .unknown
+                ? labelRowKind(stemTop: normalizedStem.minY, frame: plotFrame) : colourKind
             let pillWidth = max(0.035, min(0.075, Double(crop.width) / Double(image.width) * 0.07))
             let pillHeight = 0.045
             let pill = OCRNormalizedRect(
@@ -567,7 +586,7 @@ enum OCREventStemDetector {
                 stemRect: normalizedStem,
                 pillRect: pill,
                 isComplete: complete,
-                confidence: 0.55 + lengthConfidence * 0.35 + (kind == .unknown ? 0 : 0.1)
+                confidence: 0.55 + lengthConfidence * 0.35 + (colourKind == .unknown ? 0 : 0.1)
             )
         }
         return isolatePillRegions(dropStemsBehindNeighbouringPill(
@@ -604,6 +623,18 @@ enum OCREventStemDetector {
     }
 
     /// Pixel centre of the flat light-grey pill outline directly above a stem.
+    /// Lower edge of the upper label row, measured up from the plot frame.
+    /// Lower-row stems end about 0.016 above the frame, upper-row stems about 0.07.
+    static let upperLabelRowOffset = 0.04
+
+    /// CamAPS FX layout assumption: bolus pills sit on the upper label row,
+    /// carbohydrate pills on the lower one. A stem ending in the upper row is
+    /// therefore a bolus and one ending in the lower row a carbohydrate entry.
+    /// The recognized unit must still agree (`OCRTextParser.unitContradicts`).
+    static func labelRowKind(stemTop: Double, frame: OCRNormalizedRect) -> OCRTherapyEventKind {
+        stemTop < frame.minY - upperLabelRowOffset ? .bolus : .carbohydrates
+    }
+
     private static func isPillOutline(_ color: OCRPixelColor) -> Bool {
         let low = min(color.red, color.green, color.blue)
         let high = max(color.red, color.green, color.blue)
@@ -636,6 +667,10 @@ enum OCREventStemDetector {
     /// closed: flat base and top, both end arcs, and paper beyond each arc.
     /// An outline cut by a neighbouring pill or an image edge returns nil.
     static func closedPillRect(above stem: OCRDetectedEventStem, image: OCRPixelImage) -> OCRNormalizedRect? {
+        closedPillPixelRect(above: stem, image: image).map(image.normalizedRect(for:))
+    }
+
+    static func closedPillPixelRect(above stem: OCRDetectedEventStem, image: OCRPixelImage) -> OCRPixelRect? {
         guard let base = pillBaseRun(above: stem, image: image) else { return nil }
         let needed = (base.upper - base.lower + 1) * 4 / 5
         var top: Int?
@@ -667,10 +702,63 @@ enum OCREventStemDetector {
         }
         guard let left = arcEnd(from: base.lower, step: -1),
               let right = arcEnd(from: base.upper, step: 1) else { return nil }
-        return OCRNormalizedRect(
-            x: Double(left) / Double(image.width), y: Double(top) / Double(image.height),
-            width: Double(right - left + 1) / Double(image.width),
-            height: Double(base.y - top + 1) / Double(image.height))
+        return OCRPixelRect(x: left, y: top, width: right - left + 1, height: base.y - top + 1)
+    }
+
+    /// Glyph structure of the label inside a closed pill, from ink alone.
+    ///
+    /// CamAPS sets "<number> <unit>": glyphs are ink columns separated by
+    /// paper, and exactly one gap is as wide as a space. Left of it stand
+    /// digits and at most narrow decimal separators, right of it the unit:
+    /// one wide glyph ("g") or a narrow and a wide one ("IE"). All widths
+    /// are relative to the pill height. Anything else returns nil: merged
+    /// or split glyphs, a second pill's text, a cut or foreign label.
+    static func labelGlyphShape(above stem: OCRDetectedEventStem, image: OCRPixelImage) -> OCRLabelGlyphShape? {
+        guard let pill = closedPillPixelRect(above: stem, image: image), pill.height >= 12 else { return nil }
+        let inset = max(3, pill.height / 12)
+        guard pill.width > 2 * inset + 2 else { return nil }
+        let unit = Double(pill.height)
+        var groups: [(first: Int, last: Int)] = []
+        for x in (pill.x + inset)...(pill.maxX - 1 - inset) {
+            var hasInk = false
+            for y in (pill.y + inset)...(pill.maxY - 1 - inset) {
+                let color = image[x, y]
+                if color.isDarkInk || color.isTherapyBlue { hasInk = true; break }
+            }
+            guard hasInk else { continue }
+            if let last = groups.last, last.last == x - 1 {
+                groups[groups.count - 1].last = x
+            } else {
+                groups.append((x, x))
+            }
+        }
+        guard groups.count >= 2 else { return nil }
+        let widths = groups.map { Double($0.last - $0.first + 1) / unit }
+        let gaps = zip(groups, groups.dropFirst()).map { Double($1.first - $0.last - 1) / unit }
+        let spaces = gaps.indices.filter { gaps[$0] >= 0.2 }
+        guard spaces.count == 1, let space = spaces.first else { return nil }
+        func isWideGlyph(_ width: Double) -> Bool { (0.25...0.45).contains(width) }
+        let unitWidths = Array(widths[(space + 1)...])
+        let kind: OCRTherapyEventKind
+        if unitWidths.count == 1, isWideGlyph(unitWidths[0]) {
+            kind = .carbohydrates
+        } else if unitWidths.count == 2, unitWidths[0] <= 0.12, isWideGlyph(unitWidths[1]),
+                  gaps[space + 1] <= 0.18 {
+            kind = .bolus
+        } else {
+            return nil
+        }
+        var digits = 0, separators = 0
+        for width in widths[...space] {
+            if width <= 0.12 {
+                separators += 1
+            } else if (0.14...0.45).contains(width) {
+                digits += 1
+            } else {
+                return nil
+            }
+        }
+        return OCRLabelGlyphShape(digits: digits, separators: separators, unit: kind)
     }
 
     /// Another stem on the same label row close enough that the two pills
@@ -687,7 +775,7 @@ enum OCREventStemDetector {
         _ stems: [OCRDetectedEventStem], image: OCRPixelImage, frame: OCRNormalizedRect
     ) -> [OCRDetectedEventStem] {
         var result = stems
-        for lower in stems where lower.isComplete && lower.stemRect.minY > frame.minY - 0.04 {
+        for lower in stems where lower.isComplete && lower.stemRect.minY > frame.minY - upperLabelRowOffset {
             let x = Int(lower.stemRect.midX * Double(image.width))
             let lowerY = Int(lower.stemRect.minY * Double(image.height))
             let firstY = max(0, lowerY - Int(Double(image.height) * 0.075))

@@ -43,6 +43,24 @@ final class EventEvidenceTests: XCTestCase {
         XCTAssertEqual(OCRTextParser.amount(from: conflict, expectedKind: .unknown).0, .amountUnknown)
     }
 
+    func testUnitOfTheOtherKindContradictsTheLabelRow() {
+        func text(_ value: String, _ confidence: Double = 1) -> [OCRTextCandidate] {
+            [.init(text: value, confidence: confidence)]
+        }
+        // An upper-row pill reading grams, or a lower-row pill reading units.
+        XCTAssertTrue(OCRTextParser.unitContradicts(text("46 g"), expectedKind: .bolus))
+        XCTAssertTrue(OCRTextParser.unitContradicts(text("4.8 IE"), expectedKind: .carbohydrates))
+        // Agreement, no readable unit, weak text and unknown kind are no contradiction.
+        XCTAssertFalse(OCRTextParser.unitContradicts(text("4.8 IE"), expectedKind: .bolus))
+        XCTAssertFalse(OCRTextParser.unitContradicts(text("4.8"), expectedKind: .carbohydrates))
+        XCTAssertFalse(OCRTextParser.unitContradicts(text("160"), expectedKind: .bolus))
+        XCTAssertFalse(OCRTextParser.unitContradicts(text("46 g", 0.3), expectedKind: .bolus))
+        XCTAssertFalse(OCRTextParser.unitContradicts(text("46 g"), expectedKind: .unknown))
+        XCTAssertFalse(OCRTextParser.unitContradicts([], expectedKind: .bolus))
+        // A row-assigned kind never borrows the other kind's amount.
+        XCTAssertNil(OCRTextParser.amount(from: text("46 g"), expectedKind: .bolus).0.value)
+    }
+
     func testAgreeingLowConfidencePassesCorroborateAnAmount() {
         func pass(_ texts: String..., confidence: Double = 0.3) -> [OCRTextCandidate] {
             texts.map { .init(text: $0, confidence: confidence) }

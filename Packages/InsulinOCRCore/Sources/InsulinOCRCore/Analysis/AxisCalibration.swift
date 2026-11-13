@@ -39,6 +39,30 @@ enum OCRTextParser {
         pattern: #"^\s*([0-9]{1,3}(?:[.,][0-9])?)\s*g\s*$"#,
         options: [.caseInsensitive]
     )
+    // A known kind (label row or stem colour) makes the unit redundant, but
+    // only for a reading the pill's own ink confirms as complete.
+    private static let bareBolusExpression = try! NSRegularExpression(
+        pattern: #"^\s*([0-9]{1,2}(?:[.,][0-9]{1,2})?)\s*$"#
+    )
+    private static let bareCarbohydrateExpression = try! NSRegularExpression(
+        pattern: #"^\s*([0-9]{1,3}(?:[.,][0-9])?)\s*$"#
+    )
+
+    private static func bolusAmount(in text: String, labelShape: OCRLabelGlyphShape?) -> Double? {
+        var amount = parseNumber(in: text, expression: bolusExpression)
+        if amount == nil, labelShape?.confirms(bareNumber: text, kind: .bolus) == true {
+            amount = parseNumber(in: text, expression: bareBolusExpression)
+        }
+        return amount.flatMap { $0 > 0 && $0 <= 50 ? $0 : nil }
+    }
+
+    private static func carbohydrateAmount(in text: String, labelShape: OCRLabelGlyphShape?) -> Double? {
+        var amount = parseNumber(in: text, expression: carbohydrateExpression)
+        if amount == nil, labelShape?.confirms(bareNumber: text, kind: .carbohydrates) == true {
+            amount = parseNumber(in: text, expression: bareCarbohydrateExpression)
+        }
+        return amount.flatMap { $0 > 0 && $0 <= 300 ? $0 : nil }
+    }
 
     static func minuteOfDay(from text: String) -> Int? {
         let range = NSRange(text.startIndex..<text.endIndex, in: text)
@@ -57,31 +81,32 @@ enum OCRTextParser {
         parseNumber(in: text, expression: numberExpression)
     }
 
+    /// `labelShape` is the pill's measured glyph structure. With it, and a
+    /// known kind, a unit-less number that accounts for every number glyph
+    /// is accepted. Without it the unit is required as before.
     static func amount(
         from candidates: [OCRTextCandidate],
-        expectedKind: OCRTherapyEventKind
+        expectedKind: OCRTherapyEventKind,
+        labelShape: OCRLabelGlyphShape? = nil
     ) -> (OCRDetectedAmount, OCRTherapyEventKind, Double) {
         let sorted = candidates.sorted { $0.confidence > $1.confidence }
         var recognized: [(Double, OCRTherapyEventKind, Double)] = []
         for candidate in sorted where candidate.confidence >= 0.35 {
             switch expectedKind {
             case .bolus:
-                if let amount = parseNumber(in: candidate.text, expression: bolusExpression),
-                   amount > 0, amount <= 50 {
+                if let amount = bolusAmount(in: candidate.text, labelShape: labelShape) {
                     recognized.append((amount, .bolus, candidate.confidence))
                 }
             case .carbohydrates:
-                if let amount = parseNumber(in: candidate.text, expression: carbohydrateExpression),
-                   amount > 0, amount <= 300 {
+                if let amount = carbohydrateAmount(in: candidate.text, labelShape: labelShape) {
                     recognized.append((amount, .carbohydrates, candidate.confidence))
                 }
             case .unknown:
-                if let amount = parseNumber(in: candidate.text, expression: bolusExpression),
-                   amount > 0, amount <= 50 {
+                // Without a known kind only the unit can classify the event.
+                if let amount = bolusAmount(in: candidate.text, labelShape: nil) {
                     recognized.append((amount, .bolus, candidate.confidence))
                 }
-                if let amount = parseNumber(in: candidate.text, expression: carbohydrateExpression),
-                   amount > 0, amount <= 300 {
+                if let amount = carbohydrateAmount(in: candidate.text, labelShape: nil) {
                     recognized.append((amount, .carbohydrates, candidate.confidence))
                 }
             }
@@ -91,6 +116,22 @@ enum OCRTextParser {
             return (.amountUnknown, expectedKind, 0)
         }
         return (.known(first.0), first.1, first.2)
+    }
+
+    /// True when no candidate parses as the expected kind but a confident
+    /// one carries the unit of the other kind: the label row or stem colour
+    /// says one kind and a readable unit says the other.
+    static func unitContradicts(
+        _ candidates: [OCRTextCandidate], expectedKind: OCRTherapyEventKind
+    ) -> Bool {
+        guard expectedKind != .unknown,
+              amount(from: candidates, expectedKind: expectedKind).0.value == nil else { return false }
+        return candidates.contains { candidate in
+            guard candidate.confidence >= 0.35 else { return false }
+            return expectedKind == .bolus
+                ? carbohydrateAmount(in: candidate.text, labelShape: nil) != nil
+                : bolusAmount(in: candidate.text, labelShape: nil) != nil
+        }
     }
 
     /// Fallback for labels Vision reads at its lowest confidence level only.
