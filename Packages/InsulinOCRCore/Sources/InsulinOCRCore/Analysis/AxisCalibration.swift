@@ -39,71 +39,61 @@ enum OCRTextParser {
         pattern: #"^\s*([0-9]{1,3}(?:[.,][0-9])?)\s*g\s*$"#,
         options: [.caseInsensitive]
     )
-    // A known kind (label row or stem colour) makes the unit redundant.
+    // A known kind (label row or stem colour) makes the unit redundant, but
+    // only for a reading the pill's own ink confirms as complete.
     private static let bareBolusExpression = try! NSRegularExpression(
         pattern: #"^\s*([0-9]{1,2}(?:[.,][0-9]{1,2})?)\s*$"#
     )
     private static let bareCarbohydrateExpression = try! NSRegularExpression(
         pattern: #"^\s*([0-9]{1,3}(?:[.,][0-9])?)\s*$"#
     )
-    // Vision reads a trailing "g" as "9" ("4 g" as "49"). Without a unit such
-    // a whole number is indistinguishable from that misreading.
-    private static let trailingNineExpression = try! NSRegularExpression(pattern: #"^\s*[0-9]*9\s*$"#)
 
-    private static func bolusAmount(in text: String, unitRequired: Bool) -> Double? {
-        let amount = parseNumber(in: text, expression: bolusExpression)
-            ?? (unitRequired ? nil : parseNumber(in: text, expression: bareBolusExpression))
+    private static func bolusAmount(in text: String, labelShape: OCRLabelGlyphShape?) -> Double? {
+        var amount = parseNumber(in: text, expression: bolusExpression)
+        if amount == nil, labelShape?.confirms(bareNumber: text, kind: .bolus) == true {
+            amount = parseNumber(in: text, expression: bareBolusExpression)
+        }
         return amount.flatMap { $0 > 0 && $0 <= 50 ? $0 : nil }
     }
 
-    private static func carbohydrateAmount(in text: String, unitRequired: Bool) -> Double? {
+    private static func carbohydrateAmount(in text: String, labelShape: OCRLabelGlyphShape?) -> Double? {
         var amount = parseNumber(in: text, expression: carbohydrateExpression)
-        if amount == nil, !unitRequired,
-           trailingNineExpression.firstMatch(in: text, range: NSRange(text.startIndex..., in: text)) == nil {
+        if amount == nil, labelShape?.confirms(bareNumber: text, kind: .carbohydrates) == true {
             amount = parseNumber(in: text, expression: bareCarbohydrateExpression)
         }
         return amount.flatMap { $0 > 0 && $0 <= 300 ? $0 : nil }
-    }
-
-    static func minuteOfDay(from text: String) -> Int? {
-        let range = NSRange(text.startIndex..<text.endIndex, in: text)
-        guard let match = timeExpression.firstMatch(in: text, range: range),
-              match.range == range,
-              let hourRange = Range(match.range(at: 1), in: text),
-              let minuteRange = Range(match.range(at: 2), in: text),
-              let hour = Int(text[hourRange]),
-              let minute = Int(text[minuteRange]) else {
-            return nil
-        }
-        return hour * 60 + minute
     }
 
     static func numericAxisValue(from text: String) -> Double? {
         parseNumber(in: text, expression: numberExpression)
     }
 
+    /// `labelShape` is the pill's measured glyph structure. With it, and a
+    /// known kind, a unit-less number that accounts for every number glyph
+    /// is accepted. Without it the unit is required as before.
     static func amount(
         from candidates: [OCRTextCandidate],
-        expectedKind: OCRTherapyEventKind
+        expectedKind: OCRTherapyEventKind,
+        labelShape: OCRLabelGlyphShape? = nil
     ) -> (OCRDetectedAmount, OCRTherapyEventKind, Double) {
         let sorted = candidates.sorted { $0.confidence > $1.confidence }
         var recognized: [(Double, OCRTherapyEventKind, Double)] = []
         for candidate in sorted where candidate.confidence >= 0.35 {
             switch expectedKind {
             case .bolus:
-                if let amount = bolusAmount(in: candidate.text, unitRequired: false) {
+                if let amount = bolusAmount(in: candidate.text, labelShape: labelShape) {
                     recognized.append((amount, .bolus, candidate.confidence))
                 }
             case .carbohydrates:
-                if let amount = carbohydrateAmount(in: candidate.text, unitRequired: false) {
+                if let amount = carbohydrateAmount(in: candidate.text, labelShape: labelShape) {
                     recognized.append((amount, .carbohydrates, candidate.confidence))
                 }
             case .unknown:
                 // Without a known kind only the unit can classify the event.
-                if let amount = bolusAmount(in: candidate.text, unitRequired: true) {
+                if let amount = bolusAmount(in: candidate.text, labelShape: nil) {
                     recognized.append((amount, .bolus, candidate.confidence))
                 }
-                if let amount = carbohydrateAmount(in: candidate.text, unitRequired: true) {
+                if let amount = carbohydrateAmount(in: candidate.text, labelShape: nil) {
                     recognized.append((amount, .carbohydrates, candidate.confidence))
                 }
             }
@@ -126,8 +116,8 @@ enum OCRTextParser {
         return candidates.contains { candidate in
             guard candidate.confidence >= 0.35 else { return false }
             return expectedKind == .bolus
-                ? carbohydrateAmount(in: candidate.text, unitRequired: true) != nil
-                : bolusAmount(in: candidate.text, unitRequired: true) != nil
+                ? carbohydrateAmount(in: candidate.text, labelShape: nil) != nil
+                : bolusAmount(in: candidate.text, labelShape: nil) != nil
         }
     }
 

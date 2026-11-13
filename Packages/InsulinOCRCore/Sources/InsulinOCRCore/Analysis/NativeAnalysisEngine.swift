@@ -13,7 +13,7 @@ public struct NativeAnalysisConfiguration: Sendable, Equatable {
     public let maximumTimeResidualMinutes: Double
 
     public init(
-        algorithmVersion: String = "native-1.14.0",
+        algorithmVersion: String = "native-1.15.0",
         minimumBasalCoverage: Double = 0.99,
         maximumTimeResidualMinutes: Double = 1
     ) {
@@ -267,6 +267,8 @@ public actor NativeAnalysisEngine: AnalysisEngine {
             let crossesBoundary = stem.pillRect.maxX > layout.dataRightEdgeX
             let closedPill = crossesBoundary
                 ? OCREventStemDetector.closedPillRect(above: stem, image: pixelImage) : nil
+            // Ink structure of the label, used to confirm a unit-less reading.
+            let labelShape = OCREventStemDetector.labelGlyphShape(above: stem, image: pixelImage)
             let clippedPill = crossesBoundary && closedPill == nil
             let textRightEdge = closedPill?.maxX ?? layout.dataRightEdgeX
             let pillRegion = closedPill ?? OCRNormalizedRect(x: stem.pillRect.minX, y: stem.pillRect.minY,
@@ -300,7 +302,7 @@ public actor NativeAnalysisEngine: AnalysisEngine {
                 .flatMap(\.candidates)
                 .sorted { $0.confidence > $1.confidence }
             var evidenceIDs = evidence.map(\.id)
-            var parsed = OCRTextParser.amount(from: candidates, expectedKind: stem.kind)
+            var parsed = OCRTextParser.amount(from: candidates, expectedKind: stem.kind, labelShape: labelShape)
             var corroborated = false
             if parsed.0.value == nil && !clippedPill {
                 let enhanced = try recognizeText(in: cgImage, region: pillRegion,
@@ -315,7 +317,7 @@ public actor NativeAnalysisEngine: AnalysisEngine {
                 candidates += usable.flatMap(\.candidates)
                 candidates.sort { $0.confidence > $1.confidence }
                 evidenceIDs += usable.map(\.id)
-                parsed = OCRTextParser.amount(from: candidates, expectedKind: stem.kind)
+                parsed = OCRTextParser.amount(from: candidates, expectedKind: stem.kind, labelShape: labelShape)
                 if parsed.0.value == nil && !crowded {
                     // Original crop, uncropped image and enhanced crop.
                     parsed = OCRTextParser.corroboratedAmount(fromPasses: [

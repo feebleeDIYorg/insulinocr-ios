@@ -274,6 +274,54 @@ final class AnalysisPipelineTests: XCTestCase {
             above: stem, image: image(rightEnd: true, paperBeyond: false)))
     }
 
+    func testLabelGlyphShapeIsMeasuredFromInk() throws {
+        let width = 1_000, height = 500
+        // Glyphs as (ink width, gap after) in pixels; the pill is 24 pixels high.
+        func image(_ glyphs: [(Int, Int)], from start: Int, blue: Bool = false) -> OCRPixelImage {
+            var bytes = [UInt8](repeating: 255, count: width * height * 4)
+            func paint(_ xs: Range<Int>, _ ys: Range<Int>, _ rgb: (UInt8, UInt8, UInt8)) {
+                for y in ys {
+                    for x in xs {
+                        let i = (y * width + x) * 4
+                        bytes[i] = rgb.0; bytes[i + 1] = rgb.1; bytes[i + 2] = rgb.2
+                    }
+                }
+            }
+            let outline: (UInt8, UInt8, UInt8) = (199, 199, 204)
+            paint(380..<421, 83..<85, outline)
+            paint(380..<421, 60..<62, outline)
+            paint(368..<370, 62..<83, outline)
+            paint(431..<433, 62..<83, outline)
+            paint(399..<402, 85..<130, (0, 0, 0))
+            var x = start
+            for (ink, gap) in glyphs {
+                paint(x..<(x + ink), 66..<79, blue ? (25, 143, 255) : (0, 0, 0))
+                x += ink + gap
+            }
+            return .init(width: width, height: height, rgba: bytes)
+        }
+        let frame = OCRNormalizedRect(x: 0.1, y: 0.2, width: 0.8, height: 0.65)
+        func shape(_ image: OCRPixelImage) throws -> OCRLabelGlyphShape? {
+            let stem = try XCTUnwrap(OCREventStemDetector.detect(image: image, plotFrame: frame).first)
+            return OCREventStemDetector.labelGlyphShape(above: stem, image: image)
+        }
+        // "46 g": two digits, a space, one wide unit glyph.
+        XCTAssertEqual(try shape(image([(8, 2), (8, 7), (8, 0)], from: 380)),
+            OCRLabelGlyphShape(digits: 2, separators: 0, unit: .carbohydrates))
+        // "4.8 IE" in blue: digit, point, digit, space, narrow and wide unit glyph.
+        XCTAssertEqual(try shape(image([(8, 2), (2, 2), (8, 7), (2, 3), (8, 0)], from: 376, blue: true)),
+            OCRLabelGlyphShape(digits: 2, separators: 1, unit: .bolus))
+        // No unit, two spaces, or a glyph too wide to be one character: no shape.
+        XCTAssertNil(try shape(image([(8, 2), (8, 0)], from: 380)))
+        XCTAssertNil(try shape(image([(8, 7), (8, 7), (8, 0)], from: 376)))
+        XCTAssertNil(try shape(image([(18, 7), (8, 0)], from: 380)))
+        let carbs = OCRLabelGlyphShape(digits: 2, separators: 0, unit: .carbohydrates)
+        XCTAssertTrue(carbs.confirms(bareNumber: " 46 ", kind: .carbohydrates))
+        XCTAssertFalse(carbs.confirms(bareNumber: "4", kind: .carbohydrates))
+        XCTAssertFalse(carbs.confirms(bareNumber: "4.6", kind: .carbohydrates))
+        XCTAssertFalse(carbs.confirms(bareNumber: "46", kind: .bolus))
+    }
+
     func testOnlySameRowNeighboursCompeteForPillPixels() {
         func stem(x: Double, top: Double) -> OCRDetectedEventStem {
             .init(kind: .unknown, stemRect: .init(x: x, y: top, width: 0.002, height: 0.2 - top),
@@ -618,28 +666,39 @@ final class AnalysisPipelineTests: XCTestCase {
         XCTAssertEqual(parsed.0, .known(160))
         XCTAssertEqual(parsed.1, .carbohydrates)
 
-        // With the kind known from the label row the unit is redundant.
-        func bare(_ text: String, _ kind: OCRTherapyEventKind) -> OCRDetectedAmount {
-            OCRTextParser.amount(from: [OCRTextCandidate(text: text, confidence: 0.99)], expectedKind: kind).0
+        // A unit-less number counts only when the pill's ink confirms that the
+        // reading accounts for every number glyph and the unit glyphs fit the kind.
+        func bare(_ text: String, _ kind: OCRTherapyEventKind,
+                  _ shape: OCRLabelGlyphShape?) -> OCRDetectedAmount {
+            OCRTextParser.amount(from: [OCRTextCandidate(text: text, confidence: 0.99)],
+                expectedKind: kind, labelShape: shape).0
         }
-        XCTAssertEqual(bare("160", .carbohydrates), .known(160))
-        XCTAssertEqual(bare("4.8", .bolus), .known(4.8))
-        XCTAssertEqual(bare("0,05", .bolus), .known(0.05))
-        // Without a known kind a bare number classifies nothing.
-        XCTAssertEqual(bare("160", .unknown), .amountUnknown)
-        // "4 g" is misread as "49": a unit-less whole number ending in 9 stays unknown.
-        XCTAssertEqual(bare("49", .carbohydrates), .amountUnknown)
-        XCTAssertEqual(bare("9", .carbohydrates), .amountUnknown)
-        XCTAssertEqual(bare("49 g", .carbohydrates), .known(49))
-        // Out-of-range or malformed text is still rejected.
-        for (text, kind) in [("160", OCRTherapyEventKind.bolus), ("301", .carbohydrates),
-                             ("23 9", .carbohydrates), ("4.8 1E", .bolus), ("0", .bolus)] {
-            XCTAssertEqual(bare(text, kind), .amountUnknown, text)
-        }
+        let threeDigitCarbs = OCRLabelGlyphShape(digits: 3, separators: 0, unit: .carbohydrates)
+        let twoDigitCarbs = OCRLabelGlyphShape(digits: 2, separators: 0, unit: .carbohydrates)
+        let oneDigitCarbs = OCRLabelGlyphShape(digits: 1, separators: 0, unit: .carbohydrates)
+        let decimalBolus = OCRLabelGlyphShape(digits: 2, separators: 1, unit: .bolus)
+        XCTAssertEqual(bare("160", .carbohydrates, threeDigitCarbs), .known(160))
+        XCTAssertEqual(bare("4.8", .bolus, decimalBolus), .known(4.8))
+        XCTAssertEqual(bare("4,8", .bolus, decimalBolus), .known(4.8))
+        XCTAssertEqual(bare("9", .carbohydrates, oneDigitCarbs), .known(9))
+        // No measured shape, or no known kind: the unit stays required.
+        XCTAssertEqual(bare("160", .carbohydrates, nil), .amountUnknown)
+        XCTAssertEqual(bare("160", .unknown, threeDigitCarbs), .amountUnknown)
+        // "46 g" read as "4", "4 g" read as "49", a lost decimal point and a
+        // unit of the other kind do not account for the ink.
+        XCTAssertEqual(bare("4", .carbohydrates, twoDigitCarbs), .amountUnknown)
+        XCTAssertEqual(bare("49", .carbohydrates, oneDigitCarbs), .amountUnknown)
+        XCTAssertEqual(bare("48", .bolus, decimalBolus), .amountUnknown)
+        XCTAssertEqual(bare("46", .bolus, twoDigitCarbs), .amountUnknown)
+        // A reading with its unit does not depend on the shape.
+        XCTAssertEqual(bare("49 g", .carbohydrates, nil), .known(49))
+        // Malformed or out-of-range text is still rejected.
+        XCTAssertEqual(bare("23 9", .carbohydrates, twoDigitCarbs), .amountUnknown)
+        XCTAssertEqual(bare("301", .carbohydrates, threeDigitCarbs), .amountUnknown)
         // A bare and a unit reading of the same pill must agree.
         let disagreeing = OCRTextParser.amount(from: [
             .init(text: "4", confidence: 0.9), .init(text: "46 g", confidence: 0.9),
-        ], expectedKind: .carbohydrates)
+        ], expectedKind: .carbohydrates, labelShape: oneDigitCarbs)
         XCTAssertEqual(disagreeing.0, .amountUnknown)
     }
 

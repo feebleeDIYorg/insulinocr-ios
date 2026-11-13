@@ -113,14 +113,20 @@ neutral stems, so stem colour says nothing on real screenshots; bolus pills sit
 on the upper label row and carbohydrate pills on the lower one. A stem without
 therapy colour that ends in the upper row is a bolus, one ending in the lower
 row a carbohydrate entry (`testNeutralStemKindFollowsItsLabelRow`). By the
-owner's decision the unit is redundant once the kind is known: a bare number is
-accepted as the amount ("4.8" in the upper row is 4.8 IE). Two guards remain. A
-unit-less whole number ending in 9 in the lower row stays unknown, because
-Vision reads a trailing "g" as "9" ("4 g" as "49"). A confidently read unit
-of the other kind is a contradiction: kind and amount stay unknown
-(`testUnitOfTheOtherKindContradictsTheLabelRow`). Without the unit a partially
-visible label is no longer rejected by its missing unit; only the crop-edge and
-agreement checks protect against a truncated number. An unreadable amount now
+owner's decision the unit is redundant once the kind is known ("4.8" in the
+upper row is 4.8 IE). Since 1.15.0 a unit-less number is accepted only when
+the pill's own ink confirms the reading is complete, independent of text
+recognition: the pill outline is measured closed, its ink splits into glyphs
+with exactly one space, the glyphs after the space have the shape of the
+expected unit (one wide glyph for "g", a narrow and a wide one for "IE"), and
+the reading has exactly as many digits and decimal separators as the glyphs
+before the space (`testLabelGlyphShapeIsMeasuredFromInk`). "46 g" read as "4"
+or "4 g" read as "49" therefore stays unknown, as does any label whose ink is
+merged, split, overlapped or cut. A reading that carries its unit is accepted
+as before. A confidently read unit of the other kind remains a contradiction:
+kind and amount stay unknown (`testUnitOfTheOtherKindContradictsTheLabelRow`).
+The glyph widths were set on the private screenshots seen so far and are not
+validated on a corpus. An unreadable amount now
 withholds only its own category instead of both. The row rule is a layout
 assumption taken from the owner and the screenshots seen so far, not from
 CamAPS documentation; a coloured stem, as in the synthetic fixtures, keeps
