@@ -54,7 +54,7 @@ struct SimulationSettings: Codable, Equatable, Sendable {
 
     init() {}
 
-    init(from decoder: Decoder) throws {
+    init(from decoder: any Decoder) throws {
         let container = try decoder.container(keyedBy: CodingKeys.self)
         sensitivity = try container.decodeIfPresent(DailyProfile.self, forKey: .sensitivity)
         carbRatio = try container.decodeIfPresent(DailyProfile.self, forKey: .carbRatio)
