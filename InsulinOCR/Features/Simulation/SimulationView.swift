@@ -202,7 +202,10 @@ struct SimulationView: View {
                     drafts.append(SimulationEventDraft(kind: .insulinNeed))
                 }
             } label: {
+                // The whole row opens the menu, not only the text.
                 Label("Hinzufügen", systemImage: "plus")
+                    .frame(maxWidth: .infinity, alignment: .leading)
+                    .contentShape(.rect)
             }
             .accessibilityIdentifier("simulation.addEvent")
         } header: {

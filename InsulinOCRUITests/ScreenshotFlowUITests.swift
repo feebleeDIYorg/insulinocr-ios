@@ -219,7 +219,8 @@ final class ScreenshotFlowUITests: XCTestCase {
             scrollUpALittle(in: app)
         }
         XCTAssertTrue(add.waitForExistence(timeout: 5), app.debugDescription)
-        add.tap()
+        // Tap the label at the leading edge: the row is wider than the menu's text.
+        add.coordinate(withNormalizedOffset: CGVector(dx: 0.15, dy: 0.5)).tap()
         let entry = app.buttons[title]
         XCTAssertTrue(entry.waitForExistence(timeout: 5), app.debugDescription)
         entry.tap()
