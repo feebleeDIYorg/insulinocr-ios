@@ -34,7 +34,7 @@ struct CaseDetailView: View {
             case .correction:
                 CorrectionEditorView(record: record, library: library, appModel: appModel)
             case .simulation:
-                SimulationView(record: record, library: library)
+                SimulationView(record: record, library: library, settings: appModel.settings)
             case .settings:
                 SettingsView(appModel: appModel, settings: appModel.settings)
             }

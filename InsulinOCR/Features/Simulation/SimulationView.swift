@@ -1,4 +1,3 @@
-import Charts
 import InsulinOCRCore
 import SwiftUI
 
@@ -6,23 +5,20 @@ struct SimulationView: View {
     @Environment(\.dismiss) private var dismiss
     let record: CaseEntity
     let library: CaseLibraryStore
+    @Bindable var settings: AppSettings
 
     @State private var baseEnvelope: StoredComputationEnvelope?
     @State private var scenarioName = "Neue Simulation"
-    @State private var eventTime: Date
-    // Empty until something is typed: the field shows its unit as placeholder
-    // instead of a zero that has to be deleted first.
-    @State private var bolusUnits: Double?
-    @State private var carbohydrateGrams: Double?
+    /// Empty means a profile basal rate of 0 U/h.
+    @State private var profileBasalText = ""
+    @State private var drafts: [SimulationEventDraft] = []
+    @State private var showBaseline = false
+    @State private var visibleOrefCurves: Set<OrefCurveKind> = []
+    @State private var showsSettings = false
+    @State private var chartData: SimulationChartData?
     @State private var preview: SimulationScenario?
     @State private var savedScenarios: [SimulationScenario] = []
     @State private var errorMessage: String?
-
-    init(record: CaseEntity, library: CaseLibraryStore) {
-        self.record = record
-        self.library = library
-        self.eventTime = record.captureTime
-    }
 
     private var canSimulate: Bool {
         record.status == .complete
@@ -30,11 +26,20 @@ struct SimulationView: View {
             && baseEnvelope?.run.id == record.activeComputationRunID
     }
 
+    private var profileBasal: Double {
+        guard let typed = DailyProfileDraft.number(profileBasalText), typed.isFinite, (0...20).contains(typed) else {
+            return 0
+        }
+        return typed
+    }
+
     var body: some View {
         NavigationStack {
             Form {
                 if canSimulate {
+                    chartSection
                     inputSection
+                    eventSection
                     if let preview {
                         resultSection(preview)
                     }
@@ -52,17 +57,31 @@ struct SimulationView: View {
                 ToolbarItem(placement: .cancellationAction) {
                     Button("Schließen") { dismiss() }
                 }
-                ToolbarItem(placement: .confirmationAction) {
+                ToolbarItemGroup(placement: .confirmationAction) {
+                    Button("Simulations-Einstellungen", systemImage: "slider.horizontal.3") {
+                        showsSettings = true
+                    }
+                    .accessibilityIdentifier("simulation.settings")
                     Button("Szenario speichern") { saveScenario() }
                         .disabled(!canSimulate || preview == nil)
                 }
             }
             .task(id: record.activeComputationRunID) { load() }
-            .onChange(of: record.status) { updatePreview() }
-            .onChange(of: bolusUnits) { updatePreview() }
-            .onChange(of: carbohydrateGrams) { updatePreview() }
-            .onChange(of: eventTime) { updatePreview() }
-            .onChange(of: scenarioName) { updatePreview() }
+            .onChange(of: record.status) { update() }
+            .onChange(of: drafts) { update() }
+            .onChange(of: profileBasalText) { update() }
+            .onChange(of: scenarioName) { update() }
+            .onChange(of: settings.simulation) { update() }
+            .sheet(isPresented: $showsSettings) {
+                NavigationStack {
+                    SimulationSettingsView(settings: settings)
+                        .toolbar {
+                            ToolbarItem(placement: .confirmationAction) {
+                                Button("Fertig") { showsSettings = false }
+                            }
+                        }
+                }
+            }
             .alert(
                 "Simulation nicht verfügbar",
                 isPresented: Binding(
@@ -77,44 +96,208 @@ struct SimulationView: View {
         }
     }
 
+    // MARK: - Chart
+
+    @ViewBuilder
+    private var chartSection: some View {
+        Section {
+            Picker("Modell", selection: $settings.simulation.model) {
+                Text("Loop").tag(GlucosePredictionModel.loop)
+                Text("oref").tag(GlucosePredictionModel.oref)
+            }
+            .pickerStyle(.segmented)
+            .accessibilityIdentifier("simulation.model")
+            if let chartData {
+                SimulationChart(
+                    data: chartData,
+                    limits: settings.simulation.limits,
+                    unit: settings.glucoseUnit,
+                    showBaseline: showBaseline,
+                    visibleOrefCurves: visibleOrefCurves
+                )
+                if !chartData.orefCurves.isEmpty {
+                    orefToggles(chartData)
+                }
+            }
+            Toggle("Verlauf ohne Ereignisse einblenden", isOn: $showBaseline)
+                .accessibilityIdentifier("simulation.baseline")
+        } footer: {
+            Text(chartFooter)
+        }
+    }
+
+    private var chartFooter: String {
+        let basal = DailyProfileDraft.text(profileBasal)
+        let model = settings.simulation.model == .loop
+            ? "Loop-Modell mit Momentum"
+            : "oref-artige Kurven mit der KH-Aufnahmekurve dieser App, nicht bitgenau"
+        return "Modellrechnung, keine Dosierungsempfehlung. \(model). Gerechnet mit Profil-Basalrate \(basal) IE/h; nach dem Aufnahmezeitpunkt gilt die Profil-Basalrate. Aktives Insulin enthält nur bereits abgegebenes Basal."
+    }
+
+    /// The oref curves beyond the main one, each switched on by its chip.
+    private func orefToggles(_ data: SimulationChartData) -> some View {
+        HStack(spacing: 8) {
+            ForEach(data.orefCurves) { curve in
+                let isOn = visibleOrefCurves.contains(curve.kind)
+                Button {
+                    if isOn {
+                        visibleOrefCurves.remove(curve.kind)
+                    } else {
+                        visibleOrefCurves.insert(curve.kind)
+                    }
+                } label: {
+                    HStack(spacing: 4) {
+                        Capsule().fill(SimulationChart.color(curve.kind)).frame(width: 12, height: 3)
+                        Text(curve.kind.title)
+                    }
+                    .font(.caption)
+                }
+                .buttonStyle(.bordered)
+                .tint(isOn ? Color.accentColor : Color.secondary)
+                .accessibilityAddTraits(isOn ? .isSelected : [])
+            }
+        }
+    }
+
+    // MARK: - Inputs
+
     private var inputSection: some View {
         Section {
             TextField("Name", text: $scenarioName)
                 .accessibilityIdentifier("simulation.name")
-            DatePicker("Zeitpunkt", selection: $eventTime, in: ...record.captureTime)
-            HStack {
-                Text("Zusätzlicher Bolus")
-                Spacer(minLength: 8)
-                TextField("IE", value: $bolusUnits, format: .number.precision(.fractionLength(0...2)))
-                    .frame(width: 96)
-                    .accessibilityLabel("Zusätzlicher Bolus")
-                    .accessibilityIdentifier("simulation.bolus")
+            LabeledContent("Profil-Basalrate") {
+                TextField("IE/h", text: $profileBasalText)
                     .keyboardType(.decimalPad)
                     .multilineTextAlignment(.trailing)
-            }
-            HStack {
-                Text("Zusätzliche Kohlenhydrate")
-                Spacer(minLength: 8)
-                TextField("g", value: $carbohydrateGrams, format: .number.precision(.fractionLength(0...1)))
-                    .frame(width: 96)
-                    .accessibilityLabel("Zusätzliche Kohlenhydrate")
-                    .accessibilityIdentifier("simulation.carbs")
-                    .keyboardType(.decimalPad)
-                    .multilineTextAlignment(.trailing)
+                    .frame(width: 110)
+                    .accessibilityLabel("Profil-Basalrate in Einheiten pro Stunde")
+                    .accessibilityIdentifier("simulation.profileBasal")
             }
         } header: {
-            Text("Was-wäre-wenn-Ereignisse")
+            Text("Szenario")
         } footer: {
-            Text("Simulationen bleiben getrennt von erkannten und korrigierten Therapiedaten. Der Zeitpunkt liegt spätestens beim eingefrorenen Aufnahmezeitpunkt.")
+            Text("Die Profil-Basalrate ist der Bezugswert für abgegebenes Basal. Leer bedeutet 0 IE/h: Dann zählt das gesamte abgegebene Basal als glukosesenkend, und die Kurve fällt tiefer aus als mit deiner echten Basalrate.")
         }
     }
 
-    private func resultSection(_ scenario: SimulationScenario) -> some View {
-        return Section("Basis, Szenario und Delta") {
-            comparisonRows(scenario)
-            if let envelope = baseEnvelope {
-                SimulationForecastChart(envelope: envelope, scenario: scenario)
+    private var eventSection: some View {
+        Section {
+            ForEach($drafts) { $draft in
+                eventRow($draft)
             }
+            .onDelete { drafts.remove(atOffsets: $0) }
+            Menu {
+                Button("Bolus", systemImage: "syringe.fill") {
+                    drafts.append(SimulationEventDraft(kind: .bolus))
+                }
+                Button("Kohlenhydrate", systemImage: "fork.knife") {
+                    drafts.append(SimulationEventDraft(kind: .carbohydrate))
+                }
+                ForEach(settings.simulation.activityPresets) { preset in
+                    Button(preset.name, systemImage: "figure.run") {
+                        drafts.append(SimulationEventDraft(preset: preset))
+                    }
+                }
+                Button("Freie Aktivität", systemImage: "figure.walk") {
+                    drafts.append(SimulationEventDraft(kind: .insulinNeed))
+                }
+            } label: {
+                Label("Hinzufügen", systemImage: "plus")
+            }
+            .accessibilityIdentifier("simulation.addEvent")
+        } header: {
+            Text("Was-wäre-wenn-Ereignisse")
+        } footer: {
+            Text("Start in Minuten relativ zum Aufnahmezeitpunkt: 0 ist jetzt, 20 in zwanzig Minuten, -15 vor einer Viertelstunde. Simulationen bleiben getrennt von erkannten und korrigierten Therapiedaten.")
+        }
+    }
+
+    private func eventRow(_ draft: Binding<SimulationEventDraft>) -> some View {
+        let value = draft.wrappedValue
+        return VStack(alignment: .leading, spacing: 8) {
+            Label(Self.title(value), systemImage: Self.symbol(value.kind))
+                .font(.subheadline.weight(.semibold))
+            HStack(alignment: .bottom, spacing: 12) {
+                eventField(Self.amountCaption(value.kind), text: draft.amountText, keyboard: .decimalPad,
+                           identifier: "simulation.amount." + Self.identifier(value.kind))
+                if value.kind == .insulinNeed {
+                    eventField("Dauer (h)", text: draft.durationText, keyboard: .decimalPad,
+                               identifier: "simulation.duration")
+                }
+                eventField("Start (min)", text: draft.offsetText, keyboard: .numbersAndPunctuation,
+                           identifier: "simulation.offset." + Self.identifier(value.kind))
+                if let date = value.date(reference: record.captureTime) {
+                    Text(date, format: .dateTime.hour().minute())
+                        .font(.footnote.monospacedDigit())
+                        .foregroundStyle(.secondary)
+                        .padding(.bottom, 7)
+                }
+            }
+            if value.event(reference: record.captureTime) == nil {
+                Text("Unvollständig oder ausserhalb des erlaubten Bereichs; wird nicht gerechnet.")
+                    .font(.caption)
+                    .foregroundStyle(.orange)
+            }
+        }
+        .padding(.vertical, 2)
+    }
+
+    private func eventField(
+        _ caption: String, text: Binding<String>, keyboard: UIKeyboardType, identifier: String
+    ) -> some View {
+        VStack(alignment: .leading, spacing: 2) {
+            Text(caption)
+                .font(.caption2)
+                .foregroundStyle(.secondary)
+            TextField(caption, text: text)
+                .keyboardType(keyboard)
+                .textFieldStyle(.roundedBorder)
+                .frame(width: 84)
+                .accessibilityIdentifier(identifier)
+        }
+    }
+
+    private static func title(_ draft: SimulationEventDraft) -> String {
+        switch draft.kind {
+        case .bolus: "Bolus"
+        case .carbohydrate: "Kohlenhydrate"
+        case .insulinNeed: draft.title.map { "Aktivität: " + $0 } ?? "Freie Aktivität"
+        }
+    }
+
+    private static func symbol(_ kind: SimulationEventDraft.Kind) -> String {
+        switch kind {
+        case .bolus: "syringe.fill"
+        case .carbohydrate: "fork.knife"
+        case .insulinNeed: "figure.run"
+        }
+    }
+
+    private static func amountCaption(_ kind: SimulationEventDraft.Kind) -> String {
+        switch kind {
+        case .bolus: "Menge (IE)"
+        case .carbohydrate: "Menge (g)"
+        case .insulinNeed: "Bedarf (%)"
+        }
+    }
+
+    private static func identifier(_ kind: SimulationEventDraft.Kind) -> String {
+        switch kind {
+        case .bolus: "bolus"
+        case .carbohydrate: "carbohydrate"
+        case .insulinNeed: "insulinNeed"
+        }
+    }
+
+    // MARK: - Results
+
+    private func resultSection(_ scenario: SimulationScenario) -> some View {
+        Section {
+            comparisonRows(scenario)
+        } header: {
+            Text("Basis, Szenario und Delta")
+        } footer: {
+            Text("Werte zum Aufnahmezeitpunkt. Ereignisse danach erscheinen in der Grafik, aber nicht in diesen Zahlen.")
         }
     }
 
@@ -127,7 +310,13 @@ struct SimulationView: View {
                         comparisonRows(scenario)
                             .padding(.vertical, 6)
                         if let envelope = envelope(for: scenario) {
-                            SimulationForecastChart(envelope: envelope, scenario: scenario)
+                            SimulationChart(
+                                data: chartData(for: scenario, envelope: envelope),
+                                limits: settings.simulation.limits,
+                                unit: settings.glucoseUnit,
+                                showBaseline: false,
+                                visibleOrefCurves: []
+                            )
                         }
                     } label: {
                         VStack(alignment: .leading, spacing: 4) {
@@ -176,9 +365,12 @@ struct SimulationView: View {
         )
     }
 
+    // MARK: - Data
+
     private func load() {
         baseEnvelope = nil
         preview = nil
+        chartData = nil
         savedScenarios = []
         guard let runID = record.activeComputationRunID,
               let entity = try? library.computationRuns(caseID: record.id).first(where: { $0.id == runID }),
@@ -193,7 +385,7 @@ struct SimulationView: View {
         savedScenarios = (try? library.simulations(caseID: record.id))?.compactMap {
             try? JSONDecoder.insulinOCR.decode(SimulationScenario.self, from: $0.encodedPayload)
         } ?? []
-        updatePreview()
+        update()
     }
 
     private func envelope(for scenario: SimulationScenario) -> StoredComputationEnvelope? {
@@ -203,18 +395,38 @@ struct SimulationView: View {
         return try? JSONDecoder.insulinOCR.decode(StoredComputationEnvelope.self, from: entity.encodedPayload)
     }
 
-    private func updatePreview() {
+    private func chartData(for scenario: SimulationScenario, envelope: StoredComputationEnvelope) -> SimulationChartData {
+        SimulationChartBuilder.build(
+            data: envelope.effectiveData,
+            therapy: envelope.run.settings,
+            reference: envelope.run.referenceDate,
+            events: scenario.events,
+            simulation: settings.simulation,
+            profileBasalUnitsPerHour: scenario.profileBasalUnitsPerHour ?? 0,
+            model: scenario.predictionModel ?? settings.simulation.model,
+            timeZoneIdentifier: record.captureTimeZoneIdentifier
+        )
+    }
+
+    /// Recomputes the chart and the scenario from the current inputs. The
+    /// chart also shows the course without any simulated event.
+    private func update() {
         guard canSimulate, let envelope = baseEnvelope else {
             preview = nil
+            chartData = nil
             return
         }
-        var events: [SimulationEvent] = []
-        if let bolusUnits, bolusUnits > 0, bolusUnits.isFinite {
-            events.append(.bolus(InsulinEvent(date: eventTime, units: bolusUnits)))
-        }
-        if let carbohydrateGrams, carbohydrateGrams > 0, carbohydrateGrams.isFinite {
-            events.append(.carbohydrate(CarbohydrateEvent(date: eventTime, grams: carbohydrateGrams)))
-        }
+        let events = drafts.compactMap { $0.event(reference: envelope.run.referenceDate) }
+        chartData = SimulationChartBuilder.build(
+            data: envelope.effectiveData,
+            therapy: envelope.run.settings,
+            reference: envelope.run.referenceDate,
+            events: events,
+            simulation: settings.simulation,
+            profileBasalUnitsPerHour: profileBasal,
+            model: settings.simulation.model,
+            timeZoneIdentifier: record.captureTimeZoneIdentifier
+        )
         guard !events.isEmpty else {
             preview = nil
             return
@@ -231,7 +443,9 @@ struct SimulationView: View {
             name: scenarioName.isEmpty ? "Simulation" : scenarioName,
             events: events,
             baseline: envelope.run.result.current,
-            scenario: scenarioSnapshot
+            scenario: scenarioSnapshot,
+            profileBasalUnitsPerHour: profileBasal,
+            predictionModel: settings.simulation.model
         )
     }
 
@@ -248,66 +462,10 @@ struct SimulationView: View {
                 payload: preview
             )
             savedScenarios.append(preview)
+            drafts = []
             self.preview = nil
         } catch {
             errorMessage = error.localizedDescription
-        }
-    }
-}
-
-private struct SimulationForecastChart: View {
-    let envelope: StoredComputationEnvelope
-    let scenario: SimulationScenario
-    @State private var points: [Point] = []
-
-    private struct Point: Identifiable {
-        let id = UUID()
-        let date: Date
-        let series: String
-        let insulin: Double
-        let carbohydrates: Double
-    }
-
-    var body: some View {
-        VStack(alignment: .leading) {
-            Text("Gesamt-IOB im Verlauf").font(.headline)
-            Chart(points) { point in
-                LineMark(x: .value("Zeit", point.date), y: .value("IE", point.insulin))
-                    .foregroundStyle(by: .value("Verlauf", point.series))
-            }
-            .chartYAxisLabel("IE")
-            .frame(height: 180)
-            .accessibilityLabel("Vergleich des Gesamt-IOB von Basis und Simulation")
-            Text("Aktive Kohlenhydrate im Verlauf").font(.headline)
-            Chart(points) { point in
-                LineMark(x: .value("Zeit", point.date), y: .value("Gramm", point.carbohydrates))
-                    .foregroundStyle(by: .value("Verlauf", point.series))
-            }
-            .chartYAxisLabel("g")
-            .frame(height: 180)
-            .accessibilityLabel("Vergleich der aktiven Kohlenhydrate von Basis und Simulation")
-        }
-        .task(id: scenario.id) { calculate() }
-    }
-
-    private func calculate() {
-        let calculator = DefaultActivityCalculator()
-        let simulated = SimulationCalculator.applying(events: scenario.events, to: envelope.effectiveData)
-        let result = calculator.calculate(
-            data: simulated,
-            settings: envelope.run.settings,
-            referenceDate: envelope.run.referenceDate,
-            forecastStepMinutes: 5
-        )
-        let baseline = [envelope.run.result.current] + envelope.run.result.forecast
-        let forecast = [result.current] + result.forecast
-        points = [("Basis", baseline), ("Simulation", forecast)].flatMap { name, snapshots in
-            snapshots.compactMap { snapshot in
-                guard let insulin = snapshot.totalIOB.value, let carbohydrates = snapshot.cob.value else {
-                    return nil
-                }
-                return Point(date: snapshot.date, series: name, insulin: insulin, carbohydrates: carbohydrates)
-            }
         }
     }
 }

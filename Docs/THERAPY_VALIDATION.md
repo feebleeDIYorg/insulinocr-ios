@@ -96,10 +96,14 @@ unchanged. Original analysis flags and historical runs are preserved. The legacy
 reducer API without a review window remains conservative. No rate is inferred
 from a gap; new UI drafts contain exact boundaries and an empty amount field.
 
-## Glucose prediction (experimental, not yet used by the app)
+## Glucose prediction (experimental)
 
 `GlucosePredictor` extrapolates glucose from insulin and carbohydrates for the
-planned simulation chart. It is a model calculation, not a measurement and not
+simulation chart. The simulation runs it with the daily profiles from the
+settings and the profile basal rate typed in the scenario; an empty field
+counts as 0 U/h. Without sensitivity and carbohydrate ratio, or without a
+glucose value in the 15 minutes before capture, the chart shows insulin and
+carbohydrates on board only. It is a model calculation, not a measurement and not
 dosing advice, and it is not validated against real glucose courses.
 
 Both models share the app's validated insulin curve and its carbohydrate
