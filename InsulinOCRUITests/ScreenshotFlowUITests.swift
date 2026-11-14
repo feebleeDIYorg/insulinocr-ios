@@ -87,11 +87,14 @@ final class ScreenshotFlowUITests: XCTestCase {
         toolbarAction("Simulation", in: app).tap()
         XCTAssertTrue(app.textFields["simulation.name"].waitForExistence(timeout: 5), app.debugDescription)
         replace(app.textFields["simulation.name"], with: scenarioName)
+        closeSimulationKeyboard(in: app)
         // Events are rows of a list; each starts at the capture time (offset 0).
         addSimulationEvent("Bolus", in: app)
         replace(app.textFields["simulation.amount.bolus"], with: "1")
+        closeSimulationKeyboard(in: app)
         addSimulationEvent("Kohlenhydrate", in: app)
         replace(app.textFields["simulation.amount.carbohydrate"], with: "15")
+        closeSimulationKeyboard(in: app)
         // The comparison rows follow the list; a Form creates rows lazily.
         let bolusRow = app.staticTexts["Bolus IOB, Basis, Szenario, Delta, 0.00 IE, 1.00 IE, +1.00 IE"]
         let carbohydrateRow = app.staticTexts["Aktive KH, Basis, Szenario, Delta, 0.00 g, 15.00 g, +15.00 g"]
@@ -209,6 +212,14 @@ final class ScreenshotFlowUITests: XCTestCase {
         let metric = app.staticTexts.matching(NSPredicate(format: "label BEGINSWITH %@", title + ", ")).firstMatch
         XCTAssertTrue(metric.waitForExistence(timeout: 5))
         return metric
+    }
+
+    /// The keyboard covers the lower rows; its "Fertig" key closes it.
+    private func closeSimulationKeyboard(in app: XCUIApplication) {
+        let done = app.buttons["simulation.keyboardDone"]
+        XCTAssertTrue(done.waitForExistence(timeout: 5), app.debugDescription)
+        done.tap()
+        XCTAssertTrue(app.keyboards.firstMatch.waitForNonExistence(timeout: 5), app.debugDescription)
     }
 
     /// Opens the add menu of the simulation's event list and picks an entry.

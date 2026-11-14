@@ -53,7 +53,17 @@ struct SimulationView: View {
                 }
             }
             .navigationTitle("Simulation")
+            // The number pad has no return key: scrolling or "Fertig" closes it.
+            .scrollDismissesKeyboard(.immediately)
             .toolbar {
+                ToolbarItemGroup(placement: .keyboard) {
+                    Spacer()
+                    Button("Fertig") {
+                        UIApplication.shared.sendAction(
+                            #selector(UIResponder.resignFirstResponder), to: nil, from: nil, for: nil)
+                    }
+                    .accessibilityIdentifier("simulation.keyboardDone")
+                }
                 ToolbarItem(placement: .cancellationAction) {
                     Button("Schließen") { dismiss() }
                 }
