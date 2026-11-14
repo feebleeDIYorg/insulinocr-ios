@@ -153,6 +153,12 @@ excluded only from effective data.
 
 ## Compatibility
 
+Simulation scenarios may carry the optional fields `profileBasalUnitsPerHour` and
+`predictionModel` and events of kind `insulinNeed` (an activity: start, duration and
+insulin need in percent). In `csv/simulation-events.csv` such an event has
+`event_kind` `insulin_need` with the percent as amount; its duration is in the
+scenario JSON only.
+
 Writers may add optional fields and files without changing v1. Removing or
 renaming a required field, changing units without explicit unit metadata, or
 changing a field's meaning requires a new schema version. Golden archives test

@@ -95,3 +95,38 @@ resolution. Other critical issues and screenshot-history requirements remain
 unchanged. Original analysis flags and historical runs are preserved. The legacy
 reducer API without a review window remains conservative. No rate is inferred
 from a gap; new UI drafts contain exact boundaries and an empty amount field.
+
+## Glucose prediction (experimental)
+
+`GlucosePredictor` extrapolates glucose from insulin and carbohydrates for the
+simulation chart. The simulation runs it with the daily profiles from the
+settings and the profile basal rate typed in the scenario; an empty field
+counts as 0 U/h. Without sensitivity and carbohydrate ratio, or without a
+glucose value in the 15 minutes before capture, the chart shows insulin and
+carbohydrates on board only. It is a model calculation, not a measurement and not
+dosing advice, and it is not validated against real glucose courses.
+
+Both models share the app's validated insulin curve and its carbohydrate
+absorption curve:
+
+- Insulin lowers glucose by sensitivity × insulin absorbed in a step. Basal
+  counts relative to a profile basal rate; after the reference date delivery is
+  taken to equal the profile. A profile rate of 0 counts all delivered basal.
+- Carbohydrates raise glucose by (sensitivity ÷ carbohydrate ratio) × grams absorbed.
+- An insulin-need adjustment of p % scales the basal reference by p and divides
+  sensitivity and carbohydrate ratio by p, as Loop overrides and AndroidAPS
+  profile percentages do.
+
+`loop` blends the measured trend of the last 15 minutes with the modelled
+effects; the trend hands over linearly within 20 minutes. `oref` produces
+oref-style curves (insulin only, with carbohydrates, zero temp) and carries the
+deviation between the measured and the insulin-explained change forward for one
+hour. It is **not** a bit-exact port of oref: carbohydrate impact comes from the
+app's absorption curve, not from oref's deviation-based estimate, and there is
+no UAM curve.
+
+`GlucosePredictorTests` checks hand calculations (1 U at 2 mmol/L per unit ends
+2 lower; 20 g at 10 g per unit ends 4 higher), basal relative to the profile
+against the existing basal IOB, future events, the scaling of an adjustment, and
+the decay of trend and deviation. There is no comparison with the original Loop
+or oref code yet.

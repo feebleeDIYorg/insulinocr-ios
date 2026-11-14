@@ -1,4 +1,5 @@
 import Foundation
+import InsulinOCRCore
 import Observation
 
 enum GlucoseDisplayUnit: String, CaseIterable, Identifiable, Codable, Sendable {
@@ -59,6 +60,7 @@ final class AppSettings {
         static let carbAbsorptionMinutes = "settings.carbAbsorptionMinutes"
         static let glucoseUnit = "settings.glucoseUnit"
         static let iCloudEnabled = "settings.iCloudEnabled"
+        static let simulation = "settings.simulation"
     }
 
     private let defaults: UserDefaults
@@ -87,6 +89,16 @@ final class AppSettings {
         didSet { defaults.set(iCloudEnabled, forKey: Key.iCloudEnabled) }
     }
 
+    /// Profiles, presets and limits of the glucose prediction, stored as one
+    /// JSON value. Unreadable data falls back to the defaults.
+    var simulation: SimulationSettings {
+        didSet {
+            if let data = try? JSONEncoder().encode(simulation) {
+                defaults.set(data, forKey: Key.simulation)
+            }
+        }
+    }
+
     init(defaults: UserDefaults = .standard) {
         self.defaults = defaults
         self.onboardingComplete = defaults.bool(forKey: Key.onboardingComplete)
@@ -105,6 +117,8 @@ final class AppSettings {
             rawValue: defaults.string(forKey: Key.glucoseUnit) ?? ""
         ) ?? .mmolL
         self.iCloudEnabled = defaults.bool(forKey: Key.iCloudEnabled)
+        self.simulation = defaults.data(forKey: Key.simulation)
+            .flatMap { try? JSONDecoder().decode(SimulationSettings.self, from: $0) } ?? SimulationSettings()
     }
 
     var snapshot: ComputationSettingsSnapshot {
