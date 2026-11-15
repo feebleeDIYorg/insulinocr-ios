@@ -748,11 +748,24 @@ public struct ComputationRun: Codable, Identifiable, Hashable, Sendable {
 public enum SimulationEvent: Codable, Identifiable, Hashable, Sendable {
     case bolus(InsulinEvent)
     case carbohydrate(CarbohydrateEvent)
+    /// A temporary change of insulin need (activity). It affects only the
+    /// glucose prediction, never the insulin or carbohydrates on board.
+    case insulinNeed(InsulinNeedAdjustment)
 
     public var id: UUID {
         switch self {
         case .bolus(let event): event.id
         case .carbohydrate(let event): event.id
+        case .insulinNeed(let adjustment): adjustment.id
+        }
+    }
+
+    /// When the event starts to act.
+    public var date: Date {
+        switch self {
+        case .bolus(let event): event.date
+        case .carbohydrate(let event): event.date
+        case .insulinNeed(let adjustment): adjustment.startDate
         }
     }
 }
@@ -766,6 +779,10 @@ public struct SimulationScenario: Codable, Identifiable, Hashable, Sendable {
     public let events: [SimulationEvent]
     public let baseline: ActivitySnapshot
     public let scenario: ActivitySnapshot
+    /// Profile basal rate the glucose prediction was run with; nil in
+    /// scenarios saved before predictions existed.
+    public let profileBasalUnitsPerHour: Double?
+    public let predictionModel: GlucosePredictionModel?
 
     public init(
         id: UUID = UUID(),
@@ -775,7 +792,9 @@ public struct SimulationScenario: Codable, Identifiable, Hashable, Sendable {
         createdAt: Date = Date(),
         events: [SimulationEvent],
         baseline: ActivitySnapshot,
-        scenario: ActivitySnapshot
+        scenario: ActivitySnapshot,
+        profileBasalUnitsPerHour: Double? = nil,
+        predictionModel: GlucosePredictionModel? = nil
     ) {
         self.id = id
         self.caseID = caseID
@@ -785,6 +804,8 @@ public struct SimulationScenario: Codable, Identifiable, Hashable, Sendable {
         self.events = events
         self.baseline = baseline
         self.scenario = scenario
+        self.profileBasalUnitsPerHour = profileBasalUnitsPerHour
+        self.predictionModel = predictionModel
     }
 }
 

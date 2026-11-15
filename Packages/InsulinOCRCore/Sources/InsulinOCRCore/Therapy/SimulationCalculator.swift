@@ -1,6 +1,15 @@
 import Foundation
 
 public enum SimulationCalculator {
+    /// Insulin-need adjustments among the events, for the glucose prediction.
+    public static func adjustments(in events: [SimulationEvent]) -> [InsulinNeedAdjustment] {
+        events.compactMap { event in
+            if case .insulinNeed(let adjustment) = event { return adjustment }
+            return nil
+        }
+    }
+
+
     public static func applying(
         events: [SimulationEvent],
         to data: EffectiveTherapyData
@@ -11,6 +20,8 @@ public enum SimulationCalculator {
             switch event {
             case .bolus(let insulin): boluses.append(insulin)
             case .carbohydrate(let carbohydrate): carbohydrates.append(carbohydrate)
+            // Changes sensitivity for the prediction only; no therapy data.
+            case .insulinNeed: break
             }
         }
         return EffectiveTherapyData(

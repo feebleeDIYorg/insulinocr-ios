@@ -51,8 +51,8 @@ wiring only, never recognition accuracy on real screenshots.
 The test imports the image, explicitly reanalyzes it with the current extractor
 while retaining prior immutable history, then requires complete analysis.
 It changes a basal amount and
-saves a uniquely named simulation with 1 U bolus and 15 g carbohydrate at the
-frozen reference. It checks the scenario deltas and unchanged baseline values.
+saves a uniquely named simulation with 1 U bolus and 15 g carbohydrate, added
+as rows of the event list at the frozen reference (offset 0). It checks the scenario deltas and unchanged baseline values.
 It then removes the basal amount: basal and total IOB must become
 unavailable while bolus IOB and active carbohydrates stay, both decay charts
 disappear and simulation is disabled. A further

@@ -10,6 +10,7 @@ struct SettingsView: View {
             Form {
                 therapySection
                 unitSection
+                simulationSection
                 cloudSection
                 privacySection
                 aboutSection
@@ -58,6 +59,17 @@ struct SettingsView: View {
                 }
             }
             .pickerStyle(.segmented)
+        }
+    }
+
+    private var simulationSection: some View {
+        Section {
+            NavigationLink("Simulation") {
+                SimulationSettingsView(settings: settings)
+            }
+            .accessibilityIdentifier("settings.simulation")
+        } footer: {
+            Text("Tagesprofile für Insulinsensitivität und KH-Faktor, Aktivitäts-Vorlagen und Glukosegrenzen für die Vorhersage in der Simulation.")
         }
     }
 

@@ -87,11 +87,25 @@ final class ScreenshotFlowUITests: XCTestCase {
         toolbarAction("Simulation", in: app).tap()
         XCTAssertTrue(app.textFields["simulation.name"].waitForExistence(timeout: 5), app.debugDescription)
         replace(app.textFields["simulation.name"], with: scenarioName)
-        replace(app.textFields["simulation.bolus"], with: "1")
-        replace(app.textFields["simulation.carbs"], with: "15")
-        XCTAssertTrue(app.staticTexts["Bolus IOB, Basis, Szenario, Delta, 0.00 IE, 1.00 IE, +1.00 IE"].waitForExistence(timeout: 5))
-        XCTAssertTrue(app.staticTexts["Aktive KH, Basis, Szenario, Delta, 0.00 g, 15.00 g, +15.00 g"].exists)
-        app.buttons["Szenario speichern"].tap()
+        closeSimulationKeyboard(in: app)
+        // Events are rows of a list; each starts at the capture time (offset 0).
+        addSimulationEvent("Bolus", in: app)
+        replace(app.textFields["simulation.amount.bolus"], with: "1")
+        closeSimulationKeyboard(in: app)
+        addSimulationEvent("Kohlenhydrate", in: app)
+        replace(app.textFields["simulation.amount.carbohydrate"], with: "15")
+        closeSimulationKeyboard(in: app)
+        // The comparison rows follow the list; a Form creates rows lazily.
+        let bolusRow = app.staticTexts["Bolus IOB, Basis, Szenario, Delta, 0.00 IE, 1.00 IE, +1.00 IE"]
+        let carbohydrateRow = app.staticTexts["Aktive KH, Basis, Szenario, Delta, 0.00 g, 15.00 g, +15.00 g"]
+        for row in [bolusRow, carbohydrateRow] {
+            for _ in 0..<6 {
+                if row.waitForExistence(timeout: 1) { break }
+                scrollUpALittle(in: app)
+            }
+            XCTAssertTrue(row.waitForExistence(timeout: 5), app.debugDescription)
+        }
+        toolbarAction("Szenario speichern", in: app).tap()
         let savedScenario = app.staticTexts[scenarioName]
         // Repeated imports retain the same case and its saved scenarios. Form
         // virtualizes older/longer histories, so locate the appended row by scrolling.
@@ -200,8 +214,39 @@ final class ScreenshotFlowUITests: XCTestCase {
         return metric
     }
 
+    /// The keyboard covers the lower rows; its "Fertig" key closes it.
+    private func closeSimulationKeyboard(in app: XCUIApplication) {
+        let done = app.buttons["simulation.keyboardDone"]
+        XCTAssertTrue(done.waitForExistence(timeout: 5), app.debugDescription)
+        done.tap()
+        XCTAssertTrue(app.keyboards.firstMatch.waitForNonExistence(timeout: 5), app.debugDescription)
+    }
+
+    /// Opens the add menu of the simulation's event list and picks an entry.
+    private func addSimulationEvent(_ title: String, in app: XCUIApplication) {
+        let add = app.buttons["simulation.addEvent"]
+        for _ in 0..<6 {
+            if add.waitForExistence(timeout: 1), add.isHittable { break }
+            scrollUpALittle(in: app)
+        }
+        XCTAssertTrue(add.waitForExistence(timeout: 5), app.debugDescription)
+        // Tap the label at the leading edge: the row is wider than the menu's text.
+        add.coordinate(withNormalizedOffset: CGVector(dx: 0.15, dy: 0.5)).tap()
+        let entry = app.buttons[title]
+        XCTAssertTrue(entry.waitForExistence(timeout: 5), app.debugDescription)
+        entry.tap()
+    }
+
+    /// A short drag, so a row just below the fold is not scrolled past.
+    private func scrollUpALittle(in app: XCUIApplication) {
+        let start = app.coordinate(withNormalizedOffset: CGVector(dx: 0.5, dy: 0.7))
+        start.press(forDuration: 0.05, thenDragTo: app.coordinate(withNormalizedOffset: CGVector(dx: 0.5, dy: 0.45)))
+    }
+
     private func replace(_ field: XCUIElement, with value: String) {
-        if field.identifier == "simulation.name" {
+        if field.identifier.hasPrefix("simulation.") {
+            // An element tap scrolls the field into view first.
+            XCTAssertTrue(field.waitForExistence(timeout: 5))
             field.tap()
         } else {
             field.coordinate(withNormalizedOffset: CGVector(dx: 0.99, dy: 0.5)).tap()

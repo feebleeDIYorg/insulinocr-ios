@@ -582,6 +582,13 @@ actor CaseArchiveExporter: CaseExporter {
                     date = carbohydrate.date
                     amount = carbohydrate.grams
                     unit = "g"
+                case .insulinNeed(let adjustment):
+                    // Start and percent; the duration is in the scenario JSON.
+                    eventID = adjustment.id
+                    kind = "insulin_need"
+                    date = adjustment.startDate
+                    amount = adjustment.percent
+                    unit = "%"
                 }
                 return [
                     scenario.id.uuidString,
